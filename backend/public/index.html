@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>防沉迷系统 · 管理后台</title>
+<style>
+  :root {
+    --bg:        #0f172a;
+    --surface:   #1e293b;
+    --surface2:  #273549;
+    --border:    #334155;
+    --accent:    #3b82f6;
+    --accent2:   #60a5fa;
+    --danger:    #ef4444;
+    --success:   #22c55e;
+    --warning:   #f59e0b;
+    --text:      #e2e8f0;
+    --muted:     #94a3b8;
+    --radius:    8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+  /* ── 登录页 ── */
+  #loginPage {
+    display: flex; align-items: center; justify-content: center; min-height: 100vh;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+  }
+  .login-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 2.5rem 2rem; width: 340px; box-shadow: 0 20px 60px #00000060;
+  }
+  .login-box h1 { font-size: 1.4rem; margin-bottom: .3rem; color: var(--accent2); }
+  .login-box p  { color: var(--muted); font-size: .85rem; margin-bottom: 1.5rem; }
+
+  /* ── 主布局 ── */
+  #app { display: none; }
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; flex-shrink: 0;
+  }
+  .nav-icon { width: 1.25rem; height: 1.25rem; flex-shrink: 0; color: inherit; }
+  .title-icon { width: 1.3rem; height: 1.3rem; flex-shrink: 0; vertical-align: -.15rem; }
+  .btn-icon { width: 1rem; height: 1rem; flex-shrink: 0; vertical-align: -.15rem; }
+  .sidebar-logo {
+    padding: 1.2rem 1rem; border-bottom: 1px solid var(--border);
+    font-weight: 700; font-size: 1.1rem; color: var(--accent2);
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .sidebar-logo .nav-icon { width: 1.4rem; height: 1.4rem; }
+  .nav-item {
+    padding: .8rem 1rem; cursor: pointer; color: var(--muted);
+    font-size: .95rem; transition: all .15s; border-left: 3px solid transparent;
+    display: flex; align-items: center; gap: .65rem;
+  }
+  .nav-item .nav-icon { width: 1.25rem; height: 1.25rem; flex-shrink: 0; }
+  .nav-item.active .nav-icon { color: var(--accent2); }
+  .nav-item:hover   { background: var(--surface2); color: var(--text); }
+  .nav-item.active  { border-left-color: var(--accent); color: var(--accent2); background: var(--surface2); }
+  .sidebar-footer { margin-top: auto; padding: 1rem; border-top: 1px solid var(--border); }
+  .main { flex: 1; overflow-y: auto; padding: 1.5rem; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── 通用组件 ── */
+  .page-title { font-size: 1.3rem; font-weight: 600; margin-bottom: 1.2rem; color: var(--text); }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.2rem; margin-bottom: 1rem;
+  }
+  .card-title { font-size: .9rem; font-weight: 600; color: var(--muted); margin-bottom: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+
+  label  { display: block; font-size: .82rem; color: var(--muted); margin-bottom: .3rem; }
+  input, select {
+    width: 100%; padding: .5rem .7rem; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    font-size: .9rem; outline: none; transition: border-color .15s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  .form-row { display: flex; gap: .7rem; flex-wrap: wrap; align-items: flex-end; }
+  .form-group { flex: 1; min-width: 130px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .45rem .9rem; border-radius: 6px; border: none; cursor: pointer;
+    font-size: .85rem; font-weight: 500; transition: all .15s; white-space: nowrap;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover  { background: var(--accent2); }
+  .btn-danger  { background: var(--danger); color: #fff; }
+  .btn-danger:hover   { opacity: .85; }
+  .btn-ghost   { background: var(--surface2); color: var(--text); }
+  .btn-ghost:hover    { background: var(--border); }
+  .btn-sm { padding: .25rem .6rem; font-size: .8rem; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th, td { padding: .55rem .7rem; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  .badge {
+    display: inline-block; padding: .15rem .5rem; border-radius: 999px;
+    font-size: .75rem; font-weight: 600;
+  }
+  .badge-green  { background: #14532d; color: #4ade80; }
+  .badge-red    { background: #450a0a; color: #f87171; }
+  .badge-gray   { background: #1e293b; color: #94a3b8; }
+  .badge-yellow { background: #451a03; color: #fbbf24; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .8rem; margin-bottom: 1rem; }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1rem;
+  }
+  .stat-value { font-size: 1.8rem; font-weight: 700; color: var(--accent2); }
+  .stat-label { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
+
+  .alert {
+    padding: .6rem .9rem; border-radius: 6px; margin-bottom: .8rem;
+    font-size: .85rem; display: none;
+  }
+  .alert-danger  { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+  .alert-success { background: #052e16; color: #86efac; border: 1px solid #14532d; }
+  .alert.show { display: block; }
+
+  .day-checks { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .3rem; }
+  .day-checks label { display: flex; align-items: center; gap: .3rem; color: var(--text); font-size: .85rem; margin: 0; width: auto; }
+  .day-checks input[type=checkbox] { width: auto; }
+
+  .pagination { display: flex; gap: .4rem; margin-top: .8rem; }
+  .page-btn {
+    padding: .3rem .65rem; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); cursor: pointer; font-size: .82rem;
+  }
+  .page-btn.active { background: var(--accent); border-color: var(--accent); }
+  .page-btn:hover:not(.active) { background: var(--surface2); }
+
+  .empty { text-align: center; color: var(--muted); padding: 2rem; font-size: .9rem; }
+
+  /* ── 日历组件 ── */
+  .calendar-wrap {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: clamp(.5rem, 2vw, 1rem);
+    box-shadow: 0 4px 24px rgba(0,0,0,.3);
+  }
+  #gamedayCalendar .calendar-wrap { max-width: none; }
+  #dashboardCalendar .calendar-wrap {
+    background: transparent; border: none; padding: 0; box-shadow: none;
+    max-width: none;
+  }
+  #dashboardCalendar .cal-day { aspect-ratio: 1; min-height: 0; }
+  .dashboard-row { display: grid; grid-template-columns: auto 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 860px) { .dashboard-row { grid-template-columns: 1fr; } }
+  .gameday-layout { display: grid; grid-template-columns: 1fr 280px; gap: 1rem; align-items: start; }
+  @media (max-width: 900px) { .gameday-layout { grid-template-columns: 1fr; } }
+  .gameday-layout > :last-child { min-width: 260px; }
+  .cal-header {
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: .6rem; gap: .35rem; flex-wrap: wrap;
+  }
+  .cal-title { font-weight: 700; font-size: clamp(.9rem, 2vw, 1.1rem); white-space: nowrap; }
+  .cal-nav {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: .35rem .75rem; cursor: pointer;
+    font-size: .85rem; font-weight: 600; min-width: 34px;
+    transition: background .15s, transform .1s;
+  }
+  .cal-nav:hover { background: var(--accent); border-color: var(--accent); transform: scale(1.05); }
+  .cal-jump { display: flex; gap: .3rem; align-items: center; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+  .cal-day-header { color: var(--muted); font-size: .7rem; padding: .25rem 0; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
+  .cal-day {
+    aspect-ratio: 1; padding: 2px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; border-radius: 6px;
+    font-size: clamp(.72rem, 1.5vw, .85rem); cursor: pointer;
+    transition: background .15s, transform .1s;
+  }
+  .cal-day:hover { background: var(--surface2); transform: scale(1.08); z-index: 1; }
+  .cal-day.empty { cursor: default; }
+  .cal-day.empty:hover { background: transparent; transform: none; }
+  .cal-day.today { box-shadow: inset 0 0 0 2px var(--accent); }
+  .cal-day.selected { background: var(--accent); color: #fff; }
+  .cal-dot { width: 5px; height: 5px; border-radius: 50%; margin-top: 1px; }
+  .cal-dot.green { background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.4); }
+  .cal-dot.red   { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,.4); }
+  .cal-dot-sm { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; position: relative; top: -1px; }
+  .cal-dot-sm.green { background: #22c55e; }
+  .cal-dot-sm.red   { background: #ef4444; }
+  #dashboardCalendar .cal-day { cursor: default; aspect-ratio: auto; min-height: 28px; border-radius: 5px; }
+  #dashboardCalendar .cal-day:hover { background: transparent; transform: none; }
+
+  /* ── 日期输入框 YYYY-MM-DD 提示 ── */
+  input[type="date"]:invalid:not(:focus)::-webkit-datetime-edit-fields-wrapper {
+    opacity: 0;
+  }
+  input[type="date"]:invalid {
+    border-color: var(--border);
+    box-shadow: none;
+  }
+  .date-wrap {
+    position: relative;
+  }
+  .date-wrap input[type="date"] {
+    width: 100%;
+  }
+  .date-hint {
+    position: absolute;
+    left: 0.55rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #64748b;
+    font-size: .87rem;
+    pointer-events: none;
+    z-index: 0;
+  }
+  input[type="date"]:valid ~ .date-hint,
+  input[type="date"]:focus ~ .date-hint {
+    opacity: 0;
+  }
+
+  /* ── 响应式 ── */
+  @media (max-width: 680px) {
+    .sidebar { width: 54px; }
+    .sidebar .nav-label, .sidebar-logo span, .sidebar-footer span { display: none; }
+    .sidebar-logo { justify-content: center; }
+    .nav-item { justify-content: center; }
+    .main { padding: 1rem .7rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ 登录页 ═══════════════ -->
+<div id="loginPage">
+  <div class="login-box">
+    <h1><svg class="title-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg> 防沉迷管理后台</h1>
+    <p>请使用管理员账号登录</p>
+    <div id="loginAlert" class="alert alert-danger">用户名或密码错误</div>
+    <div class="form-group" style="margin-bottom:.8rem">
+      <label>用户名</label>
+      <input id="loginUser" type="text" placeholder="admin" value="admin">
+    </div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>密码</label>
+      <input id="loginPass" type="password" placeholder="••••••••">
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="doLogin()">登 录</button>
+  </div>
+</div>
+
+<!-- ═══════════════ 主应用 ═══════════════ -->
+<div id="app">
+  <div class="layout">
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+      <div class="sidebar-logo"><svg class="nav-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg> <span>防沉迷后台</span></div>
+      <nav>
+        <div class="nav-item active" onclick="showPage('dashboard')" data-page="dashboard"><svg class="nav-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> <span class="nav-label">仪表盘</span></div>
+        <div class="nav-item" onclick="showPage('gamedays')"  data-page="gamedays" ><svg class="nav-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z"/></svg> <span class="nav-label">游戏日管理</span></div>
+        <div class="nav-item" onclick="showPage('users')"     data-page="users"    ><svg class="nav-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg> <span class="nav-label">用户管理</span></div>
+        <div class="nav-item" onclick="showPage('logs')"      data-page="logs"     ><svg class="nav-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg> <span class="nav-label">登录日志</span></div>
+        <div class="nav-item" onclick="showPage('settings')"  data-page="settings" ><svg class="nav-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg> <span class="nav-label">系统设置</span></div>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn btn-ghost btn-sm" style="width:100%" onclick="doLogout()"><svg class="nav-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg> <span>退出</span></button>
+      </div>
+    </div>
+
+    <!-- 主内容 -->
+    <div class="main">
+
+      <!-- ── 仪表盘 ── -->
+      <div class="page active" id="page-dashboard">
+        <div class="page-title"><svg class="title-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg> 仪表盘</div>
+        <div class="stat-grid" id="statGrid">
+          <div class="stat-card"><div class="stat-value" id="statToday">-</div><div class="stat-label">今日状态</div></div>
+          <div class="stat-card"><div class="stat-value" id="statPlayable">-</div><div class="stat-label">本月剩余可玩日</div></div>
+          <div class="stat-card"><div class="stat-value" id="statUsers">-</div><div class="stat-label">认证用户数</div></div>
+          <div class="stat-card"><div class="stat-value" id="statLogs">-</div><div class="stat-label">日志记录总数</div></div>
+          <div class="stat-card"><div class="stat-value" id="statMinorLogs">-</div><div class="stat-label">未成年登录次数</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">最近10条登录日志</div>
+          <table>
+            <thead><tr><th>时间</th><th>用户名</th><th>类型</th><th>操作</th><th>IP</th><th>位置</th></tr></thead>
+            <tbody id="recentLogs"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+          </table>
+        </div>
+        <div class="dashboard-row">
+          <div class="card">
+            <div class="card-title">本月游戏日日历</div>
+            <div id="dashboardCalendar"></div>
+          </div>
+          <div class="card" style="min-width:280px">
+            <div class="card-title">Mod 客户端接入配置</div>
+            <p style="font-size:.87rem;color:var(--muted);line-height:1.6">
+              在 Minecraft 客户端目录下打开
+              <code style="background:var(--bg);padding:.1rem .4rem;border-radius:4px">.minecraft/config/antiaddiction.properties</code>，
+              将以下内容填入后保存，重启游戏生效：
+            </p>
+            <div style="display:flex;gap:.4rem;margin-top:.7rem;align-items:stretch">
+              <pre id="modConfigText" style="flex:1;background:var(--bg);padding:.7rem;border-radius:6px;font-size:.85rem;color:#93c5fd;border:1px solid var(--border);margin:0;white-space:nowrap;overflow-x:auto">backend_url=http://<span id="serverAddr">YOUR_SERVER_IP</span>:3000</pre>
+              <button class="btn btn-ghost btn-sm" onclick="copyConfig()" title="复制配置" style="flex-shrink:0;padding:.4rem .7rem"><svg class="btn-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 游戏日管理 ── -->
+      <div class="page" id="page-gamedays">
+        <div class="page-title"><svg class="title-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z"/></svg> 游戏日管理</div>
+        <div class="card">
+          <div class="card-title">从 timor.tech 同步日历 <span style="font-size:.8rem;color:var(--muted);font-weight:400">自动识别调休</span></div>
+          <div id="syncAlert" class="alert"></div>
+          <div class="form-row">
+            <div class="form-group" style="max-width:140px">
+              <label>年份</label>
+              <input id="syncYear" type="number" min="2020" max="2030" value="2026">
+            </div>
+            <button class="btn btn-primary" onclick="syncGameDays()"><svg class="btn-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg> 同步全年数据</button>
+            <span style="color:var(--muted);font-size:.8rem;align-self:center">
+              <span class="cal-dot-sm green"></span>=可玩日
+              <span class="cal-dot-sm red" style="margin-left:.5rem"></span>=调休上班日
+            </span>
+          </div>
+        </div>
+        <div class="card" style="max-width:500px">
+          <div class="card-title">批量设置可游玩时间段</div>
+          <div id="batchAlert" class="alert"></div>
+          <div class="form-row">
+            <div class="form-group" style="max-width:100px">
+              <label>开始时间</label>
+              <input id="batchStart" type="number" min="0" max="23" value="19">
+            </div>
+            <div class="form-group" style="max-width:100px">
+              <label>结束时间</label>
+              <input id="batchEnd" type="number" min="0" max="23" value="21">
+            </div>
+            <button class="btn btn-primary" onclick="batchSetTime()" style="margin-top:1.5rem">应用到全部日期</button>
+          </div>
+        </div>
+        <div class="card" style="width:fit-content;max-width:100%">
+          <div id="gamedayHint" style="color:var(--muted);font-size:.85rem;padding:0 0 .6rem 0;text-align:left">↓ 点击日历中的日期进行编辑</div>
+          <div class="gameday-layout">
+            <div id="gamedayCalendar"></div>
+            <div id="gamedayEdit"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 用户管理 ── -->
+      <div class="page" id="page-users">
+        <div class="page-title"><svg class="title-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg> 实名认证用户管理</div>
+        <div class="card">
+          <div class="card-title">新增用户</div>
+          <div id="userAlert"></div>
+          <div class="form-row">
+            <div class="form-group"><label>姓名</label><input id="uName" type="text" placeholder="真实姓名"></div>
+            <div class="form-group"><label>身份证号（18位）</label><input id="uIdCard" type="text" placeholder="18位身份证号码" maxlength="18"></div>
+            <button class="btn btn-primary" onclick="addUser()" style="margin-top:1.5rem;">＋ 新增用户</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">用户列表 <span id="userCount" style="color:var(--accent2)"></span></div>
+          <table><thead><tr><th>ID</th><th>姓名</th><th>身份证号</th><th>年龄</th><th>类型</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody id="userList"></tbody></table>
+        </div>
+      </div>
+
+      <!-- ── 日志 ── -->
+      <div class="page" id="page-logs">
+        <div class="page-title"><svg class="title-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg> 登录日志</div>
+        <div class="card">
+          <div style="display:flex;gap:.7rem;margin-bottom:.7rem;align-items:flex-end;flex-wrap:wrap">
+            <div class="form-group" style="max-width:120px">
+              <label>每页条数</label>
+              <select id="logLimit" onchange="loadLogs(1)">
+                <option value="20">20</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <button class="btn btn-ghost" onclick="loadLogs(1)"><svg class="btn-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg> 刷新</button>
+            <span id="logTotal" style="color:var(--muted);font-size:.85rem;margin-left:auto;align-self:center"></span>
+          </div>
+          <div style="overflow-x:auto">
+            <table>
+              <thead><tr><th>时间</th><th>用户名</th><th>类型</th><th>操作</th><th>IP</th><th>位置</th></tr></thead>
+              <tbody id="logList"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="logPagination"></div>
+        </div>
+      </div>
+
+      <!-- ── 设置 ── -->
+      <div class="page" id="page-settings">
+        <div class="page-title"><svg class="title-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg> 系统设置</div>
+        <div class="card" style="max-width:400px">
+          <div class="card-title">修改管理员密码</div>
+          <div id="pwdAlert" class="alert"></div>
+          <div class="form-group" style="margin-bottom:.7rem">
+            <label>旧密码</label>
+            <input id="oldPwd" type="password" placeholder="当前密码">
+          </div>
+          <div class="form-group" style="margin-bottom:.7rem">
+            <label>新密码（至少6位）</label>
+            <input id="newPwd" type="password" placeholder="新密码">
+          </div>
+          <div class="form-group" style="margin-bottom:1rem">
+            <label>确认新密码</label>
+            <input id="confirmPwd" type="password" placeholder="再次输入新密码">
+          </div>
+          <button class="btn btn-primary" onclick="changePwd()">保存新密码</button>
+        </div>
+        <div class="card" style="max-width:400px">
+          <div class="card-title">API 说明</div>
+          <table style="font-size:.82rem">
+            <thead><tr><th>端点</th><th>描述</th></tr></thead>
+            <tbody>
+              <tr><td><code>GET /api/holidays</code></td><td>获取节假日列表（公开）</td></tr>
+              <tr><td><code>GET /api/rules</code></td><td>获取时间规则（公开）</td></tr>
+              <tr><td><code>POST /api/report</code></td><td>上报会话事件（公开）</td></tr>
+              <tr><td><code>POST /admin/login</code></td><td>管理员登录</td></tr>
+              <tr><td><code>GET /api/admin/holidays</code></td><td>节假日管理（需鉴权）</td></tr>
+              <tr><td><code>GET /api/admin/logs</code></td><td>日志查询（需鉴权）</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /layout -->
+</div><!-- /app -->
+
+<script>
+// ─── 工具 ──────────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const DAY_NAMES = ['','周日','周一','周二','周三','周四','周五','周六'];
+
+function fmtTs(ts) {
+  const d = new Date(ts * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function showAlert(el, msg, type='danger') {
+  el.className = `alert alert-${type} show`;
+  el.textContent = msg;
+  setTimeout(() => el.classList.remove('show'), 6000);
+}
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  return r.json();
+}
+
+// ─── 登录 / 登出 ───────────────────────────────────────────────────────────────
+async function doLogin() {
+  const username = $('loginUser').value.trim();
+  const password = $('loginPass').value;
+  const res = await api('/admin/login', { method: 'POST', body: { username, password } });
+  if (res.ok) {
+    $('loginPage').style.display = 'none';
+    $('app').style.display = 'block';
+    loadDashboard();
+    loadUsers();
+    loadGameDayCalendar();
+    loadLogs(1);
+    $('serverAddr').textContent = window.location.hostname;
+  } else {
+    $('loginAlert').classList.add('show');
+  }
+}
+
+async function doLogout() {
+  await api('/admin/logout', { method: 'POST' });
+  location.reload();
+}
+
+$('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+// 检测已登录状态
+(async () => {
+  const me = await api('/admin/me');
+  if (me.logged) {
+    $('loginPage').style.display = 'none';
+    $('app').style.display = 'block';
+    loadDashboard();
+    loadUsers();
+    loadGameDayCalendar();
+    loadLogs(1);
+    $('serverAddr').textContent = window.location.hostname;
+  }
+})();
+
+// ─── 导航 ──────────────────────────────────────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  $('page-' + name).classList.add('active');
+  document.querySelector(`[data-page="${name}"]`).classList.add('active');
+}
+
+// ─── 仪表盘 ────────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth() + 1;
+  const todayStr = `${year}-${String(month).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+
+  const results = await Promise.allSettled([
+    api('/api/admin/users'),
+    api('/api/admin/logs?limit=10&page=1'),
+    api(`/api/admin/game-days/calendar?year=${year}&month=${month}`)
+  ]);
+  const users    = results[0].value || [];
+  const logs     = results[1].value || { total: 0, rows: [] };
+  const cal      = results[2].value || { days: {} };
+
+  // 今日状态
+  const todayInfo = cal.days[String(now.getDate()).padStart(2,'0')];
+  if (todayInfo) {
+    $('statToday').innerHTML = todayInfo.playable === 1
+      ? '<span style="color:#22c55e;font-size:1.3rem">可玩</span>'
+      : '<span style="color:#ef4444;font-size:1.3rem">不可玩</span>';
+  } else {
+    const dow = now.getDay();
+    const defaultPlayable = dow === 0 || dow === 5 || dow === 6;
+    $('statToday').innerHTML = defaultPlayable
+      ? '<span style="color:#22c55e;font-size:1.3rem">可玩</span><div style="font-size:.7rem;color:var(--muted)">(默认规则)</div>'
+      : '<span style="color:#ef4444;font-size:1.3rem">不可玩</span>';
+  }
+
+  // 本月剩余可玩日
+  let remainingPlayable = 0;
+  for (let d = now.getDate(); d <= new Date(year, month, 0).getDate(); d++) {
+    const key = String(d).padStart(2,'0');
+    const info = cal.days[key];
+    if (info) {
+      if (info.playable === 1) remainingPlayable++;
+    } else {
+      const dow = new Date(year, month - 1, d).getDay();
+      if (dow === 0 || dow === 5 || dow === 6) remainingPlayable++;
+    }
+  }
+  $('statPlayable').textContent = remainingPlayable + ' 天';
+
+  $('statUsers').textContent    = users.length;
+  $('statLogs').textContent     = logs.total;
+  // 未成年次数：统计全部日志中的，而非仅首页
+  const allLogs = await api('/api/admin/logs?limit=200&page=1');
+  $('statMinorLogs').textContent = (allLogs.rows || []).filter(r => r.minor).length;
+
+  const tbody = $('recentLogs');
+  tbody.innerHTML = (logs.rows || []).map(r => `
+    <tr>
+      <td>${fmtTs(r.ts)}</td>
+      <td>${r.user_name}</td>
+      <td>${r.minor ? '<span class="badge badge-yellow">未成年</span>' : '<span class="badge badge-green">成年</span>'}</td>
+      <td>${r.action}</td>
+      <td style="font-family:monospace;font-size:.8rem">${r.ip || '-'}</td>
+      <td style="font-size:.8rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.location || ''}">${r.location || '-'}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="6" class="empty">暂无记录（请确认 Mod 配置了 backend_url）</td></tr>';
+
+  loadDashboardCalendar();
+}
+
+// ─── 日历组件 ───────────────────────────────────────────────────────────────────
+let calYear, calMonth, calData = {}, calSelectedDate = null;
+let defaultStartHour = 19, defaultEndHour = 21;
+
+async function loadCalendarData(year, month) {
+  const res = await api(`/api/admin/game-days/calendar?year=${year}&month=${month}`);
+  calData = res.days || {};
+  if (res.default_start_hour != null) defaultStartHour = res.default_start_hour;
+  if (res.default_end_hour != null)   defaultEndHour   = res.default_end_hour;
+  return res;
+}
+
+function renderCalendar(containerId, year, month, editable) {
+  calYear = year; calMonth = month;
+  const container = $(containerId);
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+  const firstDay = new Date(year, month - 1, 1);
+  const lastDay  = new Date(year, month, 0);
+  const startDow = firstDay.getDay(); // 0=Sun
+
+  let html = `<div class="calendar-wrap"><div class="cal-header">
+    <button class="cal-nav" onclick="navigateCal('${containerId}',-1,${editable})">◀</button>
+    <span class="cal-title">${year}年${month}月</span>
+    <button class="cal-nav" onclick="navigateCal('${containerId}',1,${editable})">▶</button>
+    <button class="cal-nav" onclick="jumpToToday('${containerId}',${editable})" style="font-size:.75rem">今天</button>
+    <span class="cal-jump">
+      <input id="jumpDate_${containerId}" type="month" style="width:130px;padding:.35rem .5rem;font-size:.85rem;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px">
+      <button class="cal-nav" onclick="jumpTo('${containerId}',${editable})" style="font-size:.75rem">跳转</button>
+    </span>
+  </div>`;
+  html += '<div class="cal-grid">';
+  ['日','一','二','三','四','五','六'].forEach(d => html += `<div class="cal-day-header">${d}</div>`);
+
+  // Empty cells before first day
+  for (let i = 0; i < startDow; i++) html += '<div class="cal-day empty"></div>';
+
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const info = calData[String(d).padStart(2,'0')] || {};
+    const isToday = dateStr === todayStr;
+    const isSelected = dateStr === calSelectedDate;
+    const isPlayable = info.playable === 1;
+    const isWorkdayOverride = info.is_workday_override === 1;
+
+    let classes = 'cal-day';
+    if (isToday) classes += ' today';
+    if (isSelected) classes += ' selected';
+
+    const isDefaultPlayable = !info.hasOwnProperty('playable') && [0,5,6].includes(new Date(dateStr).getDay());
+    let dotHtml = '';
+    if (isWorkdayOverride) dotHtml = '<div class="cal-dot red"></div>';
+    else if (isPlayable || isDefaultPlayable) dotHtml = '<div class="cal-dot green"></div>';
+
+    const onclick = editable ? `onclick="selectGameDay('${dateStr}')"` : '';
+    html += `<div class="${classes}" ${onclick}>
+      ${d}${dotHtml}
+    </div>`;
+  }
+  html += '</div></div>';
+  container.innerHTML = html;
+}
+
+async function jumpTo(containerId, editable) {
+  const input = $('jumpDate_' + containerId).value.trim();
+  const m = input.match(/^(\d{4})-(\d{1,2})/);
+  if (m) { calYear = parseInt(m[1]); calMonth = parseInt(m[2]); }
+  if (calMonth < 1) calMonth = 1;
+  if (calMonth > 12) calMonth = 12;
+  calSelectedDate = null;
+  await loadCalendarData(calYear, calMonth);
+  renderCalendar(containerId, calYear, calMonth, editable);
+  if (editable) $('gamedayEdit').innerHTML = '';
+}
+async function jumpToToday(containerId, editable) {
+  const now = new Date();
+  calYear = now.getFullYear(); calMonth = now.getMonth() + 1;
+  calSelectedDate = null;
+  await loadCalendarData(calYear, calMonth);
+  renderCalendar(containerId, calYear, calMonth, editable);
+  if (editable) $('gamedayEdit').innerHTML = '';
+}
+async function navigateCal(containerId, delta, editable) {
+  calMonth += delta;
+  if (calMonth < 1) { calMonth = 12; calYear--; }
+  if (calMonth > 12) { calMonth = 1; calYear++; }
+  calSelectedDate = null;
+  await loadCalendarData(calYear, calMonth);
+  renderCalendar(containerId, calYear, calMonth, editable);
+  if (editable) $('gamedayEdit').innerHTML = '';
+}
+
+// ─── 游戏日管理 ─────────────────────────────────────────────────────────────────
+async function loadGameDayCalendar() {
+  const now = new Date();
+  calYear = now.getFullYear(); calMonth = now.getMonth() + 1;
+  await loadCalendarData(calYear, calMonth);
+  renderCalendar('gamedayCalendar', calYear, calMonth, true);
+  const todayStr = `${calYear}-${String(calMonth).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  selectGameDay(todayStr);
+}
+
+async function loadDashboardCalendar() {
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth() + 1;
+  await loadCalendarData(year, month);
+  renderCalendar('dashboardCalendar', year, month, false);
+}
+
+async function syncGameDays() {
+  const year = parseInt($('syncYear').value) || new Date().getFullYear();
+  if (!confirm(`确认从 timor.tech 同步 ${year} 年日历数据？将自动识别节假日和调休。`)) return;
+  const el = $('syncAlert');
+  el.className = 'alert'; el.textContent = '正在从 timor.tech 拉取数据，请稍候...'; el.classList.add('show');
+  const res = await api('/api/admin/game-days/sync', { method: 'POST', body: { year } });
+  if (res.ok) {
+    showAlert(el, `${year} 年同步完成，共处理 ${res.count} 天`, 'success');
+    loadDashboard(); loadGameDayCalendar(); loadDashboardCalendar();
+  } else {
+    showAlert(el, res.error || '同步失败');
+  }
+}
+
+async function selectGameDay(dateStr) {
+  calSelectedDate = dateStr;
+  renderCalendar('gamedayCalendar', calYear, calMonth, true);
+
+  // Fetch current settings for this date
+  const res = await api(`/api/admin/game-days/calendar?year=${dateStr.slice(0,4)}&month=${parseInt(dateStr.slice(5,7))}`);
+  const info = (res.days || {})[dateStr.slice(8,10)] || {};
+
+  const hasInfo = info.hasOwnProperty('playable');
+  const dow = new Date(dateStr).getDay();
+  const defaultPlayable = dow === 0 || dow === 5 || dow === 6;
+  const playable = hasInfo ? info.playable !== 0 : defaultPlayable;
+  const startH = info.start_hour != null ? info.start_hour : defaultStartHour;
+  const endH   = info.end_hour   != null ? info.end_hour   : defaultEndHour;
+  const maxMin  = info.max_minutes || 0;
+  const label   = info.label || '';
+  const isHoliday = info.is_holiday === 1;
+  const isOverride = info.is_workday_override === 1;
+
+  let statusBadge = playable
+    ? '<span class="badge badge-green">可玩日</span>'
+    : '<span class="badge badge-red">非玩日</span>';
+  if (isHoliday) statusBadge += ' <span class="badge badge-yellow">法定假日</span>';
+  if (isOverride) statusBadge += ' <span class="badge badge-gray">调休上班</span>';
+
+  $('gamedayEdit').innerHTML = `
+    <div class="card-title" style="margin-bottom:.7rem">${dateStr} ${statusBadge}</div>
+    <div id="gdAlert" class="alert"></div>
+    <div class="form-group" style="margin-bottom:.5rem">
+      <label>是否可玩</label>
+      <select id="gdPlayable">
+        <option value="1" ${playable?'selected':''}>可玩</option>
+        <option value="0" ${!playable?'selected':''}>不可玩</option>
+      </select>
+    </div>
+    <div class="form-row" style="margin-bottom:.5rem">
+      <div class="form-group">
+        <label>开始时间</label>
+        <input id="gdStart" type="number" min="0" max="23" value="${startH}">
+      </div>
+      <div class="form-group">
+        <label>结束时间</label>
+        <input id="gdEnd" type="number" min="0" max="23" value="${endH}">
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:.5rem">
+      <label>限时(分钟) <span style="font-size:.75rem;color:var(--muted)">0=不限</span></label>
+      <input id="gdMaxMin" type="number" min="0" max="1440" value="${maxMin}">
+    </div>
+    <div class="form-group" style="margin-bottom:.8rem">
+      <label>备注</label>
+      <input id="gdLabel" type="text" value="${label.replace(/"/g,'&quot;')}" placeholder="如：暑假延长">
+    </div>
+    <button class="btn btn-primary" onclick="saveGameDay('${dateStr}')">保存</button>
+  `;
+}
+
+async function batchSetTime() {
+  const start_hour = parseInt($('batchStart').value);
+  const end_hour = parseInt($('batchEnd').value);
+  if (start_hour >= end_hour) { showAlert($('batchAlert'), '开始时间必须小于结束时间'); return; }
+  if (!confirm(`确认将所有游戏日的游玩时段修改为 ${start_hour}:00 - ${end_hour}:00？`)) return;
+  const res = await api('/api/admin/game-days/batch-time', { method: 'PUT', body: { start_hour, end_hour } });
+  if (res.ok) {
+    defaultStartHour = res.default_start_hour;
+    defaultEndHour   = res.default_end_hour;
+    showAlert($('batchAlert'), `默认游玩时段已更新为 ${res.default_start_hour}:00 - ${res.default_end_hour}:00`, 'success');
+    loadGameDayCalendar(); loadDashboardCalendar();
+  } else {
+    showAlert($('batchAlert'), res.error || '操作失败');
+  }
+}
+
+async function saveGameDay(dateStr) {
+  const playable = parseInt($('gdPlayable').value);
+  const start_hour = parseInt($('gdStart').value);
+  const end_hour = parseInt($('gdEnd').value);
+  const max_minutes = parseInt($('gdMaxMin').value) || 0;
+  const label = $('gdLabel').value.trim();
+  if (start_hour >= end_hour) { showAlert($('gdAlert'), '开始时间必须小于结束时间'); return; }
+  const res = await api(`/api/admin/game-days/${dateStr}`, {
+    method: 'PUT',
+    body: { playable: !!playable, start_hour, end_hour, max_minutes, label }
+  });
+  if (res.ok) {
+    showAlert($('gdAlert'), `${dateStr} 已保存`, 'success');
+    await loadCalendarData(calYear, calMonth);
+    renderCalendar('gamedayCalendar', calYear, calMonth, true);
+    loadDashboard();
+  } else {
+    showAlert($('gdAlert'), res.error || '保存失败');
+  }
+}
+
+// ─── 用户管理 ──────────────────────────────────────────────────────────────────
+async function loadUsers() {
+  const data = await api('/api/admin/users');
+  $('userCount').innerText = `（共 ${data.length} 条）`;
+  $('userList').innerHTML = data.map(u => {
+    const birth = u.id_card.substring(6,14);
+    const year = parseInt(birth.substring(0,4));
+    const age = new Date().getFullYear() - year;
+    const type = age < 18 ? '<span style="color:var(--warning)">未成年</span>' : '<span style="color:var(--success)">成年</span>';
+    const ts = fmtTs(u.created);
+    return `<tr>
+      <td>${u.id}</td><td>${u.name}</td><td style="font-family:monospace">${u.id_card}</td>
+      <td>${age} 岁</td><td>${type}</td><td>${ts}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id})">删除</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="empty">暂无用户</td></tr>';
+}
+
+async function addUser() {
+  const name = $('uName').value.trim();
+  const id_card = $('uIdCard').value.trim();
+  if (!name)   { showAlert($('userAlert'), '请输入姓名'); return; }
+  if (id_card.length !== 18) { showAlert($('userAlert'), '身份证号须为18位'); return; }
+  await api('/api/admin/users', { method: 'POST', body: { name, id_card } });
+  showAlert($('userAlert'), '用户已添加', 'success');
+  $('uName').value = ''; $('uIdCard').value = '';
+  loadUsers();
+}
+
+async function deleteUser(id) {
+  if (!confirm('确认删除该用户？')) return;
+  await api('/api/admin/users/' + id, { method: 'DELETE' });
+  loadUsers();
+}
+
+// ─── 日志 ──────────────────────────────────────────────────────────────────────
+let currentLogPage = 1;
+async function loadLogs(page) {
+  currentLogPage = page;
+  const limit = $('logLimit').value;
+  try {
+    const data = await api(`/api/admin/logs?page=${page}&limit=${limit}`);
+    const { total, rows } = data;
+    $('logTotal').textContent = `共 ${total} 条记录`;
+    $('logList').innerHTML = (rows || []).map(r => `
+      <tr>
+        <td>${fmtTs(r.ts)}</td>
+        <td>${r.user_name}</td>
+        <td>${r.minor ? '<span class="badge badge-yellow">未成年</span>' : '<span class="badge badge-green">成年</span>'}</td>
+        <td>${r.action}</td>
+        <td style="font-family:monospace;font-size:.8rem">${r.ip || '-'}</td>
+        <td style="font-size:.8rem;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.location || ''}">${r.location || '-'}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" class="empty">暂无记录（请确认 Mod 配置文件 backend_url 已指向本服务器）</td></tr>';
+
+    const totalPages = Math.ceil(total / limit);
+    const pag = $('logPagination');
+    pag.innerHTML = '';
+    for (let i = 1; i <= Math.min(totalPages, 10); i++) {
+      const btn = document.createElement('button');
+      btn.textContent = i;
+      btn.className = 'page-btn' + (i === page ? ' active' : '');
+      btn.onclick = () => loadLogs(i);
+      pag.appendChild(btn);
+    }
+  } catch (e) {
+    $('logList').innerHTML = '<tr><td colspan="4" class="empty" style="color:#f87171">加载失败：' + e.message + '</td></tr>';
+  }
+}
+
+function copyConfig() {
+  const text = $('modConfigText').innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('#modConfigText + button');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+  }).catch(() => {});
+}
+
+// ─── 修改密码 ──────────────────────────────────────────────────────────────────
+async function changePwd() {
+  const oldPassword = $('oldPwd').value;
+  const newPassword = $('newPwd').value;
+  const confirm     = $('confirmPwd').value;
+  if (newPassword !== confirm) { showAlert($('pwdAlert'), '两次密码不一致'); return; }
+  if (newPassword.length < 6)  { showAlert($('pwdAlert'), '新密码至少6位'); return; }
+  const res = await api('/api/admin/change-password', { method: 'POST', body: { oldPassword, newPassword } });
+  if (res.ok) {
+    showAlert($('pwdAlert'), '密码修改成功', 'success');
+    $('oldPwd').value = ''; $('newPwd').value = ''; $('confirmPwd').value = '';
+  } else {
+    showAlert($('pwdAlert'), res.error || '修改失败');
+  }
+}
+</script>
+</body>
+</html>
