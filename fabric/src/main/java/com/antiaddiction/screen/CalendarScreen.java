@@ -19,7 +19,7 @@ public class CalendarScreen extends Screen {
     private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy年M月");
 
     private YearMonth currentMonth;
-    private int panelX, panelY, panelW;
+    private int panelX, panelY, panelW, panelH;
     private int cellW, cellH;
     private int btnRowY, hdrRowY, gridTopY, titleY;
     private static final int COLS = 7;
@@ -30,6 +30,7 @@ public class CalendarScreen extends Screen {
     private boolean selectedPlayable, selectedIsOverride;
     private int selectedStartH, selectedEndH, selectedMaxMin;
     private boolean infoExpanded = false;
+    private long animStartMs = 0;
 
     private static final int C_BG_TOP    = 0xFF0F172A;
     private static final int C_BG_BOT    = 0xFF1E293B;
@@ -42,6 +43,12 @@ public class CalendarScreen extends Screen {
     private static final int C_MUTED     = 0xFF94A3B8;
     private static final int C_ORANGE    = 0xFFF59E0B;
     private static final int C_BORDER    = 0xFF60A5FA;
+    private static final int C_DOT       = 0xFF3B82F6;
+
+    private static final long ANIM_DOT   = 150;
+    private static final long ANIM_LINE  = 400;
+    private static final long ANIM_PANEL = 650;
+    private static final long ANIM_TEXT  = 900;
 
     public CalendarScreen() {
         super(Text.literal("游戏日日历"));
@@ -51,7 +58,6 @@ public class CalendarScreen extends Screen {
     @Override
     protected void init() {
         int btnH = 20;
-        int btnGap = 4;
         int bottomBarH = 28;
 
         int availW = this.width - MARGIN * 2;
@@ -63,13 +69,7 @@ public class CalendarScreen extends Screen {
         panelY = MARGIN;
 
         if (infoExpanded) {
-            int infoW = Math.max(120, Math.min(180, this.width - panelW - MARGIN * 3));
             panelX = MARGIN;
-            int totalW = panelW + MARGIN + infoW;
-            if (totalW > this.width - MARGIN) {
-                infoW = this.width - panelW - MARGIN * 2;
-                if (infoW < 100) panelX = (this.width - panelW) / 2;
-            }
         } else {
             panelX = Math.max(MARGIN, (this.width - panelW) / 2);
         }
@@ -78,6 +78,7 @@ public class CalendarScreen extends Screen {
         titleY = btnRowY + btnH + 8;
         hdrRowY = titleY + this.textRenderer.fontHeight + 6;
         gridTopY = hdrRowY + cellH;
+        panelH = gridTopY - panelY + cellH * MAX_ROWS;
 
         int btnY = btnRowY;
 
@@ -93,9 +94,8 @@ public class CalendarScreen extends Screen {
                 Text.literal("今天"), btn -> { currentMonth = YearMonth.now(); clearAndInit(); }
         ).dimensions(panelX + panelW - 78, btnY, 42, btnH).build());
 
-        int backY = Math.min(this.height - 26, panelY + (gridTopY - panelY) + cellH * MAX_ROWS + 16);
-        backY = Math.min(backY, this.height - MARGIN);
-        int btnRowBottom = backY;
+        int backY = Math.max(panelY + panelH + 10,
+                Math.min(this.height - 26, this.height - MARGIN));
         int totalBtnW = 130;
         int btnStartX = Math.max(MARGIN, (this.width - totalBtnW) / 2);
 
@@ -105,13 +105,13 @@ public class CalendarScreen extends Screen {
                     try { Thread.sleep(300); } catch (InterruptedException ignored) {}
                     clearAndInit();
                 }
-        ).dimensions(btnStartX, btnRowBottom, 40, 20).build());
+        ).dimensions(btnStartX, backY, 40, 20).build());
 
         this.addDrawableChild(ButtonWidget.builder(
                 Text.literal("返回"), btn -> {
                     if (this.client != null) this.client.setScreen(new TitleScreen(false));
                 }
-        ).dimensions(btnStartX + 50, btnRowBottom, 80, 20).build());
+        ).dimensions(btnStartX + 50, backY, 80, 20).build());
     }
 
     private void navMonth(int delta) {
@@ -122,8 +122,6 @@ public class CalendarScreen extends Screen {
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
         ctx.fillGradient(0, 0, this.width, this.height, C_BG_TOP, C_BG_BOT);
-
-        int panelH = gridTopY - panelY + cellH * MAX_ROWS;
 
         ctx.fill(panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, C_ACCENT);
         ctx.fill(panelX, panelY, panelX + panelW, panelY + panelH, C_SURFACE);
@@ -201,8 +199,8 @@ public class CalendarScreen extends Screen {
             }
         }
 
-        int legX = panelX + 4;
-        int legY = titleY - 4;
+        int legX = Math.min(panelX + panelW + 6, this.width - MARGIN - 130);
+        int legY = btnRowY;
         int dotSize = 5;
         int dotTextGap = 3;
         int lineH = this.textRenderer.fontHeight;
@@ -238,49 +236,98 @@ public class CalendarScreen extends Screen {
             if (selectedPlayable) lineCount++;
             if (selectedMaxMin > 0) lineCount++;
             int ipH = 8 + lineCount * 13 + 4;
-            int ipY = panelY + 16;
+            int ipY = panelY + (panelH - ipH) / 2;
+            if (ipY < MARGIN) ipY = MARGIN;
             if (ipY + ipH > this.height - MARGIN) ipY = this.height - ipH - MARGIN;
 
-            ctx.fill(ipX - 1, ipY - 1, ipX + ipW + 1, ipY + ipH + 1, C_ACCENT);
-            ctx.fill(ipX, ipY, ipX + ipW, ipY + ipH, C_SURFACE);
-            int tx = ipX + 6;
-            int ty = ipY + 4;
+            int gapX = panelX + panelW + 6;
+            int gapEndX = ipX - 2;
+            int centerY = ipY + ipH / 2;
 
-            String dateStr = selectedDate.format(DateTimeFormatter.ofPattern("M月d日 EEEE", java.util.Locale.CHINESE));
-            int dw = this.textRenderer.getWidth(dateStr);
-            ctx.drawCenteredTextWithShadow(this.textRenderer, dateStr, tx + dw / 2, ty, C_WHITE);
+            long elapsed = (animStartMs > 0) ? (System.currentTimeMillis() - animStartMs) : ANIM_TEXT;
 
-            String statusLine;
-            int statusColor;
-            if (selectedIsOverride) {
-                statusLine = "调休非玩日";
-                statusColor = C_RED;
-            } else if (selectedPlayable) {
-                statusLine = "可玩日";
-                statusColor = C_GREEN;
+            if (elapsed >= ANIM_DOT) {
+                int lx, lw;
+                if (elapsed < ANIM_LINE) {
+                    float p = (float)(elapsed - ANIM_DOT) / (float)(ANIM_LINE - ANIM_DOT);
+                    int fullW = gapEndX - gapX;
+                    lw = Math.max(4, (int)(fullW * p));
+                    lx = gapX + (fullW - lw) / 2;
+                } else {
+                    lx = gapX;
+                    lw = gapEndX - gapX;
+                }
+
+                int ly, lh;
+                if (elapsed < ANIM_PANEL) {
+                    float p = (float)(Math.max(0, elapsed - ANIM_LINE)) / (float)(ANIM_PANEL - ANIM_LINE);
+                    lh = Math.max(4, (int)(ipH * p));
+                    ly = centerY - lh / 2;
+                } else {
+                    ly = ipY;
+                    lh = ipH;
+                }
+
+                ctx.fill(lx, ly, lx + lw, ly + lh, C_ACCENT);
+                ctx.fill(lx + 1, ly + 1, lx + lw - 1, ly + lh - 1, C_SURFACE);
+
+                if (elapsed >= ANIM_TEXT) {
+                    float alphaP = Math.min(1f, (float)(elapsed - ANIM_TEXT) / 300f);
+                    int alpha = (int)(alphaP * 255);
+
+                    int tx = lx + 6;
+                    int ty = ly + 4;
+
+                    String dateStr = selectedDate.format(DateTimeFormatter.ofPattern("M月d日 EEEE", java.util.Locale.CHINESE));
+                    int dw = this.textRenderer.getWidth(dateStr);
+                    ctx.drawCenteredTextWithShadow(this.textRenderer, dateStr, tx + dw / 2, ty,
+                            blendAlpha(C_WHITE, alpha));
+
+                    String statusLine;
+                    int statusColor;
+                    if (selectedIsOverride) {
+                        statusLine = "调休非玩日";
+                        statusColor = C_RED;
+                    } else if (selectedPlayable) {
+                        statusLine = "可玩日";
+                        statusColor = C_GREEN;
+                    } else {
+                        statusLine = "非玩日";
+                        statusColor = C_MUTED;
+                    }
+                    ty += 13;
+                    int sw = this.textRenderer.getWidth(statusLine);
+                    ctx.drawCenteredTextWithShadow(this.textRenderer, statusLine, tx + sw / 2, ty,
+                            blendAlpha(statusColor, alpha));
+
+                    if (selectedPlayable) {
+                        ty += 13;
+                        String timeStr = String.format("%02d:00 - %02d:00", selectedStartH, selectedEndH);
+                        int tw = this.textRenderer.getWidth(timeStr);
+                        ctx.drawCenteredTextWithShadow(this.textRenderer, timeStr, tx + tw / 2, ty,
+                                blendAlpha(C_WHITE, alpha));
+                    }
+                    if (selectedMaxMin > 0) {
+                        ty += 13;
+                        String limitStr = "限时 " + selectedMaxMin + " 分钟";
+                        int lw2 = this.textRenderer.getWidth(limitStr);
+                        ctx.drawCenteredTextWithShadow(this.textRenderer, limitStr, tx + lw2 / 2, ty,
+                                blendAlpha(C_ORANGE, alpha));
+                    }
+                }
             } else {
-                statusLine = "非玩日";
-                statusColor = C_MUTED;
-            }
-            ty += 13;
-            int sw = this.textRenderer.getWidth(statusLine);
-            ctx.drawCenteredTextWithShadow(this.textRenderer, statusLine, tx + sw / 2, ty, statusColor);
-
-            if (selectedPlayable) {
-                ty += 13;
-                String timeStr = String.format("%02d:00 - %02d:00", selectedStartH, selectedEndH);
-                int tw = this.textRenderer.getWidth(timeStr);
-                ctx.drawCenteredTextWithShadow(this.textRenderer, timeStr, tx + tw / 2, ty, C_WHITE);
-            }
-            if (selectedMaxMin > 0) {
-                ty += 13;
-                String limitStr = "限时 " + selectedMaxMin + " 分钟";
-                int lw = this.textRenderer.getWidth(limitStr);
-                ctx.drawCenteredTextWithShadow(this.textRenderer, limitStr, tx + lw / 2, ty, C_ORANGE);
+                int dx = (gapX + gapEndX) / 2;
+                int dy = centerY;
+                int dotR = Math.max(2, Math.min(5, (int)(elapsed * 5 / (float)ANIM_DOT)));
+                ctx.fill(dx - dotR, dy - dotR, dx + dotR, dy + dotR, C_DOT);
             }
         }
 
         super.render(ctx, mouseX, mouseY, delta);
+    }
+
+    private static int blendAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | ((alpha & 0xFF) << 24);
     }
 
     @Override public boolean shouldCloseOnEsc() { return false; }
@@ -326,6 +373,7 @@ public class CalendarScreen extends Screen {
                     selectedDate = currentMonth.atDay(idx + 1);
                     updateSelectedInfo(selectedDate);
                     infoExpanded = true;
+                    animStartMs = System.currentTimeMillis();
                     clearAndInit();
                     return true;
                 }
@@ -333,6 +381,7 @@ public class CalendarScreen extends Screen {
         }
         selectedDate = null;
         infoExpanded = false;
+        animStartMs = 0;
         clearAndInit();
         return super.mouseClicked(click, doubled);
     }
