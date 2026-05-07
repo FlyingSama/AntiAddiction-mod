@@ -6,6 +6,7 @@ import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.TitleScreen;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
@@ -71,7 +72,7 @@ public class CalendarScreen extends Screen {
     protected void init() {
         int btnH = 20;
         int legendW = 140;
-        retW = 100; int retH = 24;
+        retW = 80; int retH = 22;
 
         int availW = this.width - MARGIN * 2;
         int availH = this.height - MARGIN * 2;
@@ -86,7 +87,7 @@ public class CalendarScreen extends Screen {
         hdrRowY = titleY + this.textRenderer.fontHeight + 6;
 
         int topH = hdrRowY - panelY;
-        int maxCellHForBottom = (backY - 8 - hdrRowY) / MAX_ROWS;
+        int maxCellHForBottom = (backY - 8 - hdrRowY) / (MAX_ROWS + 1);
 
         cellH = Math.max(14, Math.min(availH / (MAX_ROWS + 3), availW / (COLS + 3)));
         cellH = Math.min(cellH, maxCellHForBottom);
@@ -103,7 +104,27 @@ public class CalendarScreen extends Screen {
 
         gridTopY = hdrRowY + cellH;
         panelH = gridTopY - panelY + cellH * MAX_ROWS;
+        int maxPanelBottom = backY - 8;
+        if (panelY + panelH > maxPanelBottom) {
+            cellH = Math.max(8, (maxPanelBottom - hdrRowY) / (MAX_ROWS + 1));
+            cellW = cellH;
+            gridTopY = hdrRowY + cellH;
+            panelH = gridTopY - panelY + cellH * MAX_ROWS;
+        }
         currentDrawPanelX = panelX;
+
+        this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("返回"), btn -> {
+                    if (this.client != null) this.client.setScreen(new TitleScreen(false));
+                }
+        ).dimensions(retX, backY, retW, retH).build());
+
+        this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("⟳"), btn -> {
+                    ApiClient.refreshRules();
+                    clearAndInit();
+                }
+        ).dimensions(refX, backY, 22, retH).build());
     }
 
     private void navMonth(int delta) {
@@ -220,7 +241,7 @@ public class CalendarScreen extends Screen {
             }
         }
 
-        drawBottomButtons(ctx, mouseX, mouseY);
+        super.render(ctx, mouseX, mouseY, delta);
     }
 
     private void drawNavButtons(DrawContext ctx, int mouseX, int mouseY, int dx) {
@@ -228,11 +249,6 @@ public class CalendarScreen extends Screen {
         drawButton(ctx, mouseX, mouseY, dx + 4, btnY, 28, 20, "◀");
         drawButton(ctx, mouseX, mouseY, dx + panelW - 32, btnY, 28, 20, "▶");
         drawButton(ctx, mouseX, mouseY, dx + panelW / 2 - 21, btnY, 42, 20, "今天");
-    }
-
-    private void drawBottomButtons(DrawContext ctx, int mouseX, int mouseY) {
-        drawButton(ctx, mouseX, mouseY, retX, backY, retW, 24, "返回");
-        drawButton(ctx, mouseX, mouseY, refX, backY + 1, 22, 22, "⟳");
     }
 
     private void drawButton(DrawContext ctx, int mouseX, int mouseY, int bx, int by, int bw, int bh, String text) {
@@ -336,7 +352,7 @@ public class CalendarScreen extends Screen {
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
-        if (doubled || click.button() != 0) return false;
+        if (doubled || click.button() != 0) return super.mouseClicked(click, doubled);
 
         double mx = click.x(), my = click.y();
         int dx = currentDrawPanelX;
@@ -356,18 +372,6 @@ public class CalendarScreen extends Screen {
         if (mx >= dx + panelW - 32 && mx < dx + panelW - 4 && my >= btnRowY && my < btnRowY + 20) { navMonth(1); return true; }
         if (mx >= dx + panelW / 2 - 21 && mx < dx + panelW / 2 + 21 && my >= btnRowY && my < btnRowY + 20) {
             currentMonth = YearMonth.now(); clearAndInit(); return true;
-        }
-
-        // Bottom buttons
-        if (mx >= retX && mx < retX + retW && my >= backY && my < backY + 24) {
-            if (this.client != null) this.client.setScreen(new TitleScreen(false));
-            return true;
-        }
-        if (mx >= refX && mx < refX + 22 && my >= backY + 1 && my < backY + 23) {
-            ApiClient.refreshRules();
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-            clearAndInit();
-            return true;
         }
 
         // Date cells
@@ -397,7 +401,8 @@ public class CalendarScreen extends Screen {
             selectedDate = null; infoExpanded = false;
             animPanelXFrom = panelX; animStartMs = System.currentTimeMillis(); panelSliding = true;
             clearAndInit(); animPanelXTo = panelX;
+            return true;
         }
-        return false;
+        return super.mouseClicked(click, doubled);
     }
 }

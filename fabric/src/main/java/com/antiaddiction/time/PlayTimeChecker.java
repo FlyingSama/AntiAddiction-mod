@@ -74,16 +74,24 @@ public class PlayTimeChecker {
 
     public static long getRemainingSeconds() {
         if (!isPlayAllowed()) return 0;
+        return getRemainingSecondsForCountdown();
+    }
+
+    /** 获取剩余秒数（不计 isPlayAllowed 短路），供倒计时 HUD 使用 */
+    public static long getRemainingSecondsForCountdown() {
         LocalDateTime now = getNow();
         String today = now.toLocalDate().format(DateTimeFormatter.ISO_LOCAL_DATE);
-
         int[] gd = GAME_DAYS.get(today);
-        if (gd != null && gd[3] > 0) {
-            return Math.max(0, (gd[3] * 60L) - getPlayedSeconds());
-        }
+
         int endHour = gd != null ? gd[2] : DEFAULT_END_HOUR;
         LocalDateTime end = now.toLocalDate().atTime(endHour, 0);
-        return Math.max(0, Duration.between(now, end).getSeconds());
+        long timeRemaining = Math.max(0, Duration.between(now, end).getSeconds());
+
+        if (gd != null && gd[3] > 0) {
+            long limitRemaining = Math.max(0, (gd[3] * 60L) - getPlayedSeconds());
+            return Math.min(timeRemaining, limitRemaining);
+        }
+        return timeRemaining;
     }
 
     /** 由后端推送更新全部游戏日数据 */

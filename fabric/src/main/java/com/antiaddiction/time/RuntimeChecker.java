@@ -1,18 +1,16 @@
 package com.antiaddiction.time;
 
 import com.antiaddiction.data.PlayerDataManager;
-import com.antiaddiction.network.ApiClient;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.server.integrated.IntegratedServer;
-import net.minecraft.text.Text;
 
 public class RuntimeChecker {
 
     private static boolean registered;
+    public static int countdownSeconds = -1;
+    private static long lastCountdownTick = 0;
 
     public static void init() {
         if (registered) return;
@@ -20,80 +18,58 @@ public class RuntimeChecker {
 
         ClientTickEvents.START_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
-            if (client.currentScreen instanceof KickScreen) return;
             if (!PlayerDataManager.getInstance().isMinor()) return;
+            if (client.currentScreen instanceof com.antiaddiction.screen.VerificationScreen) return;
+            if (client.currentScreen instanceof com.antiaddiction.screen.TimeRestrictionScreen) return;
 
-            if (!PlayTimeChecker.isPlayAllowed()) {
-                client.execute(() -> client.setScreen(new KickScreen()));
-            }
-        });
-    }
+            long remaining = PlayTimeChecker.getRemainingSecondsForCountdown();
 
-    public static class KickScreen extends Screen {
-        private int countdown = 30;
-        private boolean saved;
-
-        protected KickScreen() {
-            super(Text.literal("防沉迷 - 时间到"));
-        }
-
-        @Override
-        protected void init() {
-            int cx = this.width / 2;
-            this.addDrawableChild(ButtonWidget.builder(
-                    Text.literal("立即退出"),
-                    btn -> doKick()
-            ).dimensions(cx - 50, this.height / 2 + 20, 100, 22).build());
-        }
-
-        @Override
-        public void tick() {
-            super.tick();
-            if (countdown <= 0) return;
-
-            if (!saved) {
-                saved = true;
-                MinecraftClient client = MinecraftClient.getInstance();
+            if (remaining <= 0) {
+                countdownSeconds = -1;
                 IntegratedServer server = client.getServer();
                 if (server != null) {
                     server.saveAll(true, true, true);
                 }
+                client.execute(() -> client.setScreen(
+                    new com.antiaddiction.screen.TimeRestrictionScreen()));
+            } else if (remaining <= 60) {
+                countdownSeconds = (int) remaining;
+                lastCountdownTick = System.currentTimeMillis();
             }
+        });
+    }
 
-            countdown--;
-            if (countdown <= 0) {
-                doKick();
-            }
+    public static void renderCountdownHud(DrawContext ctx) {
+        if (countdownSeconds <= 0) return;
+
+        long now = System.currentTimeMillis();
+        if (now - lastCountdownTick >= 1000) {
+            countdownSeconds--;
+            lastCountdownTick = now;
         }
 
-        private void doKick() {
+        if (countdownSeconds <= 0) {
             MinecraftClient client = MinecraftClient.getInstance();
-            client.disconnect(Text.literal("防沉迷游玩时间已结束"));
+            IntegratedServer server = client.getServer();
+            if (server != null) {
+                server.saveAll(true, true, true);
+            }
+            client.execute(() -> client.setScreen(
+                new com.antiaddiction.screen.TimeRestrictionScreen()));
+            return;
         }
 
-        @Override
-        public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-            ctx.fillGradient(0, 0, this.width, this.height, 0xFF0A0000, 0xFF1A0000);
+        MinecraftClient client = MinecraftClient.getInstance();
+        int width = client.getWindow().getScaledWidth();
+        int height = client.getWindow().getScaledHeight();
 
-            int cx = this.width / 2;
-            int cy = this.height / 2;
-            int boxW = Math.min(420, this.width - 20);
-            int boxX = cx - boxW / 2;
+        String text = "游玩时间剩余 " + (countdownSeconds / 60) + ":" +
+                String.format("%02d", countdownSeconds % 60);
+        int textWidth = client.textRenderer.getWidth(text);
+        int x = (width - textWidth) / 2;
+        int y = height - 68;
 
-            ctx.fill(boxX - 2, cy - 42, boxX + boxW + 2, cy + 42, 0xFFE25A00);
-            ctx.fill(boxX, cy - 40, boxX + boxW, cy + 40, 0xCC1E0A00);
-
-            ctx.drawCenteredTextWithShadow(this.textRenderer,
-                    Text.literal("⚠  游玩时间已结束  ⚠"), cx, cy - 22, 0xFFFF5555);
-            ctx.drawCenteredTextWithShadow(this.textRenderer,
-                    Text.literal("根据防沉迷规定，当前时间不允许继续游玩"), cx, cy - 4, 0xFFFFFFFF);
-            ctx.drawCenteredTextWithShadow(this.textRenderer,
-                    Text.literal("已自动保存，" + countdown + " 秒后退出"), cx, cy + 14, 0xFFFFAA00);
-
-            super.render(ctx, mouseX, mouseY, delta);
-        }
-
-        @Override
-        public boolean shouldCloseOnEsc() { return false; }
+        ctx.fill(x - 8, y - 2, x + textWidth + 8, y + client.textRenderer.fontHeight + 2, 0xCC000000);
+        ctx.drawCenteredTextWithShadow(client.textRenderer, text, width / 2, y, 0xFFFFAA00);
     }
 }

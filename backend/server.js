@@ -25,6 +25,7 @@ const Database      = require('better-sqlite3');
 const path          = require('path');
 const fs            = require('fs');
 const https         = require('https');
+const iconv         = require('iconv-lite');
 
 // ─── 初始化数据库 ─────────────────────────────────────────────────────────────
 const DB_PATH = path.join(__dirname, 'antiaddiction.db');
@@ -106,10 +107,14 @@ db.exec(`
 // 兼容旧数据库：安全添加新列
 try { db.prepare("ALTER TABLE sessions_log ADD COLUMN ip TEXT DEFAULT ''").run(); } catch(e) {}
 try { db.prepare("ALTER TABLE sessions_log ADD COLUMN location TEXT DEFAULT ''").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE game_days ADD COLUMN start_minute INTEGER DEFAULT 0").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE game_days ADD COLUMN end_minute INTEGER DEFAULT 0").run(); } catch(e) {}
 
 const insertCfg = db.prepare('INSERT OR IGNORE INTO default_config (key, value) VALUES (?, ?)');
 insertCfg.run('default_start_hour', '19');
 insertCfg.run('default_end_hour', '21');
+insertCfg.run('default_start_minute', '0');
+insertCfg.run('default_end_minute', '0');
 
 // 插入默认节假日（2025-2026 年）
 const defaultHolidays = [
@@ -195,6 +200,16 @@ function getClientIP(req) {
           req.ip).replace(/^::ffff:/, '');
 }
 
+function safeDecode(buf) {
+  const utf8 = buf.toString('utf8');
+  try {
+    JSON.parse(utf8);
+    return utf8;
+  } catch (e) {
+    return iconv.decode(buf, 'gbk');
+  }
+}
+
 function lookupGeo(ip) {
   return new Promise((resolve) => {
     if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.')) {
@@ -206,7 +221,7 @@ function lookupGeo(ip) {
       resp.on('data', chunk => chunks.push(chunk));
       resp.on('end', () => {
         try {
-          const data = Buffer.concat(chunks).toString('utf8');
+          const data = safeDecode(Buffer.concat(chunks));
           const arr = JSON.parse(data);
           if (Array.isArray(arr) && arr.length >= 3) {
             resolve(`${arr[1] || ''} ${arr[2] || ''}`.trim() || ip);
@@ -220,7 +235,7 @@ function lookupGeo(ip) {
         resp2.on('data', chunk => chunks2.push(chunk));
         resp2.on('end', () => {
           try {
-            const data2 = Buffer.concat(chunks2).toString('utf8');
+            const data2 = safeDecode(Buffer.concat(chunks2));
             const j = JSON.parse(data2);
             resolve(`${j.pro || ''} ${j.city || ''}`.trim() || ip);
           } catch (e) { resolve(ip); }
@@ -242,14 +257,18 @@ app.get('/api/holidays', (req, res) => {
 app.get('/api/rules', (req, res) => {
   const ds = db.prepare("SELECT value FROM default_config WHERE key='default_start_hour'").get();
   const de = db.prepare("SELECT value FROM default_config WHERE key='default_end_hour'").get();
-  const default_start_hour = parseInt(ds ? ds.value : '19');
-  const default_end_hour   = parseInt(de ? de.value : '21');
+  const dsm = db.prepare("SELECT value FROM default_config WHERE key='default_start_minute'").get();
+  const dem = db.prepare("SELECT value FROM default_config WHERE key='default_end_minute'").get();
+  const default_start_hour   = parseInt(ds ? ds.value : '19');
+  const default_end_hour     = parseInt(de ? de.value : '21');
+  const default_start_minute = parseInt(dsm ? dsm.value : '0');
+  const default_end_minute   = parseInt(dem ? dem.value : '0');
   const rows = db.prepare(`
     SELECT date, playable, is_holiday, is_workday_override,
-           start_hour, end_hour, max_minutes, label
+           start_hour, start_minute, end_hour, end_minute, max_minutes, label
     FROM game_days ORDER BY date
   `).all();
-  res.json({ default_start_hour, default_end_hour, days: rows });
+  res.json({ default_start_hour, default_start_minute, default_end_hour, default_end_minute, days: rows });
 });
 
 // POST /api/report  → 接收 Mod 上报的会话事件（立即响应，异步查IP位置）
@@ -545,12 +564,13 @@ app.get('/api/admin/game-days/calendar', requireLogin, (req, res) => {
   const prefix = `${year}-${String(month).padStart(2, '0')}`;
   const rows = db.prepare(`
     SELECT date, playable, is_holiday, is_workday_override,
-           start_hour, end_hour, max_minutes, label
+           start_hour, start_minute, end_hour, end_minute, max_minutes, label
     FROM game_days WHERE date LIKE ? ORDER BY date
   `).all(prefix + '%');
   const ds = db.prepare("SELECT value FROM default_config WHERE key='default_start_hour'").get();
   const de = db.prepare("SELECT value FROM default_config WHERE key='default_end_hour'").get();
-  // 转为 { "DD": {...} } 格式
+  const dsm = db.prepare("SELECT value FROM default_config WHERE key='default_start_minute'").get();
+  const dem = db.prepare("SELECT value FROM default_config WHERE key='default_end_minute'").get();
   const map = {};
   for (const r of rows) {
     map[r.date.slice(8, 10)] = r;
@@ -558,48 +578,55 @@ app.get('/api/admin/game-days/calendar', requireLogin, (req, res) => {
   res.json({
     year, month, days: map,
     default_start_hour: parseInt(ds ? ds.value : '19'),
-    default_end_hour:   parseInt(de ? de.value : '21')
+    default_start_minute: parseInt(dsm ? dsm.value : '0'),
+    default_end_hour:   parseInt(de ? de.value : '21'),
+    default_end_minute: parseInt(dem ? dem.value : '0')
   });
 });
 
 // PUT /api/admin/game-days/batch-time  → 批量设置默认游玩时间段（必须在 :date 之前）
 app.put('/api/admin/game-days/batch-time', requireLogin, (req, res) => {
-  const { start_hour, end_hour } = req.body;
-  if (start_hour == null || end_hour == null || Number(start_hour) >= Number(end_hour)) {
+  const { start_hour, start_minute = 0, end_hour, end_minute = 0 } = req.body;
+  if (start_hour == null || end_hour == null || Number(start_hour) > Number(end_hour) ||
+      (Number(start_hour) === Number(end_hour) && Number(start_minute) >= Number(end_minute))) {
     return res.status(400).json({ error: '开始时间必须小于结束时间' });
   }
   db.prepare("INSERT OR REPLACE INTO default_config (key, value) VALUES ('default_start_hour', ?)").run(String(start_hour));
+  db.prepare("INSERT OR REPLACE INTO default_config (key, value) VALUES ('default_start_minute', ?)").run(String(start_minute));
   db.prepare("INSERT OR REPLACE INTO default_config (key, value) VALUES ('default_end_hour', ?)").run(String(end_hour));
-  res.json({ ok: true, default_start_hour: Number(start_hour), default_end_hour: Number(end_hour) });
+  db.prepare("INSERT OR REPLACE INTO default_config (key, value) VALUES ('default_end_minute', ?)").run(String(end_minute));
+  res.json({ ok: true, default_start_hour: Number(start_hour), default_start_minute: Number(start_minute),
+             default_end_hour: Number(end_hour), default_end_minute: Number(end_minute) });
 });
 
 // PUT /api/admin/game-days/:date  → 编辑某天的规则
 app.put('/api/admin/game-days/:date', requireLogin, (req, res) => {
   const date = req.params.date;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: '日期格式错误' });
-  const { playable, start_hour, end_hour, max_minutes, label } = req.body;
+  const { playable, start_hour, start_minute = 0, end_hour, end_minute = 0, max_minutes, label } = req.body;
 
   // upsert
   const existing = db.prepare('SELECT * FROM game_days WHERE date = ?').get(date);
   if (existing) {
     db.prepare(`
-      UPDATE game_days SET playable=?, start_hour=?, end_hour=?, max_minutes=?, label=? WHERE date=?
+      UPDATE game_days SET playable=?, start_hour=?, start_minute=?, end_hour=?, end_minute=?, max_minutes=?, label=? WHERE date=?
     `).run(
       playable != null ? (playable ? 1 : 0) : existing.playable,
       start_hour != null ? Number(start_hour) : existing.start_hour,
+      start_minute != null ? Number(start_minute) : (existing.start_minute || 0),
       end_hour   != null ? Number(end_hour)   : existing.end_hour,
+      end_minute != null ? Number(end_minute) : (existing.end_minute || 0),
       max_minutes != null ? Number(max_minutes) : existing.max_minutes,
       label      != null ? String(label)        : existing.label,
       date
     );
   } else {
-    // 新品：自动推断默认 playable 状态
     const defPlayable = isDefaultPlayableDay(date) ? 1 : 0;
     db.prepare(`
-      INSERT INTO game_days (date, playable, start_hour, end_hour, max_minutes, label)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO game_days (date, playable, start_hour, start_minute, end_hour, end_minute, max_minutes, label)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(date, playable != null ? (playable ? 1 : 0) : defPlayable,
-           start_hour || 19, end_hour || 21, max_minutes || 0, label || '');
+           start_hour || 19, start_minute || 0, end_hour || 21, end_minute || 0, max_minutes || 0, label || '');
   }
   res.json({ ok: true });
 });

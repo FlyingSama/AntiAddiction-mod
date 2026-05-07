@@ -332,13 +332,13 @@
           <div class="card-title">批量设置可游玩时间段</div>
           <div id="batchAlert" class="alert"></div>
           <div class="form-row">
-            <div class="form-group" style="max-width:100px">
+            <div class="form-group" style="max-width:110px">
               <label>开始时间</label>
-              <input id="batchStart" type="number" min="0" max="23" value="19">
+              <input id="batchStart" type="text" placeholder="HH:MM" maxlength="5" value="20:00" oninput="formatTimeInput(event)" onblur="blurTimeInput(event)" style="width:80px;text-align:center" autocomplete="off">
             </div>
-            <div class="form-group" style="max-width:100px">
+            <div class="form-group" style="max-width:110px">
               <label>结束时间</label>
-              <input id="batchEnd" type="number" min="0" max="23" value="21">
+              <input id="batchEnd" type="text" placeholder="HH:MM" maxlength="5" value="21:00" oninput="formatTimeInput(event)" onblur="blurTimeInput(event)" style="width:80px;text-align:center" autocomplete="off">
             </div>
             <button class="btn btn-primary" onclick="batchSetTime()" style="margin-top:1.5rem">应用到全部日期</button>
           </div>
@@ -452,6 +452,38 @@ function showAlert(el, msg, type='danger') {
   el.className = `alert alert-${type} show`;
   el.textContent = msg;
   setTimeout(() => el.classList.remove('show'), 6000);
+}
+
+function formatTimeInput(e) {
+  let val = e.target.value.replace(/[^\d]/g, '').slice(0, 4);
+  if (val.length >= 3) val = val.slice(0, 2) + ':' + val.slice(2);
+  else if (val.length === 2 && e.target.value.length > 2) val = val + ':';
+  e.target.value = val;
+  if (val.length === 2 && e.target.selectionStart === 2) {
+    e.target.value = val + ':';
+    setTimeout(() => { e.target.setSelectionRange(3, 3); }, 0);
+  }
+  if (val.length === 5) {
+    const next = e.target.nextElementSibling;
+    if (next && next.tagName === 'INPUT') next.focus();
+  }
+}
+
+function blurTimeInput(e) {
+  let val = e.target.value.replace(/[^\d]/g, '');
+  if (val.length === 0) { e.target.value = ''; return; }
+  if (val.length <= 2) {
+    e.target.value = val.padStart(2, '0') + ':00';
+  } else {
+    e.target.value = val.slice(0, 2) + ':' + val.slice(2, 4).padEnd(2, '0');
+  }
+}
+
+function parseTimeInput(val) {
+  const parts = (val || '0:00').split(':');
+  const h = Math.min(23, Math.max(0, parseInt(parts[0]) || 0));
+  const m = Math.min(59, Math.max(0, parseInt(parts[1]) || 0));
+  return [h, m];
 }
 
 async function api(url, opts = {}) {
@@ -603,8 +635,11 @@ function renderCalendar(containerId, year, month, editable) {
     <button class="cal-nav" onclick="navigateCal('${containerId}',1,${editable})">▶</button>
     <button class="cal-nav" onclick="jumpToToday('${containerId}',${editable})" style="font-size:.75rem">今天</button>
     <span class="cal-jump">
-      <input id="jumpDate_${containerId}" type="month" style="width:130px;padding:.35rem .5rem;font-size:.85rem;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px">
-      <button class="cal-nav" onclick="jumpTo('${containerId}',${editable})" style="font-size:.75rem">跳转</button>
+      <input id="jumpYear_${containerId}" type="text" placeholder="--" maxlength="2" autocomplete="off" name="jy_${containerId}" style="width:36px;text-align:center;padding:.35rem .3rem;font-size:.85rem;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px" oninput="autoJumpYear(this,'jumpMonth_${containerId}')" onblur="blurJumpInput(this)">
+      <span style="color:var(--muted);font-size:.75rem">年</span>
+      <input id="jumpMonth_${containerId}" type="text" placeholder="--" maxlength="2" autocomplete="off" name="jm_${containerId}" style="width:30px;text-align:center;padding:.35rem .3rem;font-size:.85rem;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px" oninput="autoJumpMonth(this,'${containerId}',${editable})" onblur="blurJumpInput(this)" onfocus="focusJumpMonth(this,'${containerId}')">
+      <span style="color:var(--muted);font-size:.75rem">月</span>
+      <button class="cal-nav" onclick="jumpTo('${containerId}',${editable})" style="font-size:.7rem;padding:.2rem .4rem">跳转</button>
     </span>
   </div>`;
   html += '<div class="cal-grid">';
@@ -639,12 +674,46 @@ function renderCalendar(containerId, year, month, editable) {
   container.innerHTML = html;
 }
 
+function autoJumpYear(input, monthId) {
+  let val = input.value.replace(/[^\d]/g, '').slice(0, 2);
+  input.value = val;
+  if (val.length === 2) document.getElementById(monthId)?.focus();
+}
+
+function autoJumpMonth(input, containerId, editable) {
+  let val = input.value.replace(/[^\d]/g, '').slice(0, 2);
+  input.value = val;
+  if (val.length === 2) {
+    const yEl = document.getElementById('jumpYear_' + containerId);
+    if (!yEl || !yEl.value.trim()) {
+      yEl && yEl.focus();
+      return;
+    }
+    jumpTo(containerId, editable);
+  }
+}
+
+function blurJumpInput(input) {
+  let val = input.value.replace(/[^\d]/g, '');
+  if (val.length === 1) input.value = '0' + val;
+}
+
+function focusJumpMonth(input, containerId) {
+  const yEl = document.getElementById('jumpYear_' + containerId);
+  if (!yEl || !yEl.value.trim()) {
+    yEl && yEl.focus();
+  }
+}
+
 async function jumpTo(containerId, editable) {
-  const input = $('jumpDate_' + containerId).value.trim();
-  const m = input.match(/^(\d{4})-(\d{1,2})/);
-  if (m) { calYear = parseInt(m[1]); calMonth = parseInt(m[2]); }
-  if (calMonth < 1) calMonth = 1;
-  if (calMonth > 12) calMonth = 12;
+  const yEl = document.getElementById('jumpYear_' + containerId);
+  const mEl = document.getElementById('jumpMonth_' + containerId);
+  if (!yEl || !mEl) return;
+  let y = parseInt(yEl.value) || 0;
+  let m = parseInt(mEl.value) || 0;
+  if (y < 1 || m < 1 || m > 12) { alert('请输入有效年月'); return; }
+  calYear = 2000 + y;
+  calMonth = m;
   calSelectedDate = null;
   await loadCalendarData(calYear, calMonth);
   renderCalendar(containerId, calYear, calMonth, editable);
@@ -712,7 +781,9 @@ async function selectGameDay(dateStr) {
   const defaultPlayable = dow === 0 || dow === 5 || dow === 6;
   const playable = hasInfo ? info.playable !== 0 : defaultPlayable;
   const startH = info.start_hour != null ? info.start_hour : defaultStartHour;
+  const startM = info.start_minute != null ? info.start_minute : 0;
   const endH   = info.end_hour   != null ? info.end_hour   : defaultEndHour;
+  const endM   = info.end_minute != null ? info.end_minute : 0;
   const maxMin  = info.max_minutes || 0;
   const label   = info.label || '';
   const isHoliday = info.is_holiday === 1;
@@ -737,11 +808,11 @@ async function selectGameDay(dateStr) {
     <div class="form-row" style="margin-bottom:.5rem">
       <div class="form-group">
         <label>开始时间</label>
-        <input id="gdStart" type="number" min="0" max="23" value="${startH}">
+        <input id="gdStart" type="text" placeholder="HH:MM" maxlength="5" value="${String(startH).padStart(2,'0')}:${String(startM).padStart(2,'0')}" oninput="formatTimeInput(event)" onblur="blurTimeInput(event)" style="width:80px;text-align:center" autocomplete="off">
       </div>
       <div class="form-group">
         <label>结束时间</label>
-        <input id="gdEnd" type="number" min="0" max="23" value="${endH}">
+        <input id="gdEnd" type="text" placeholder="HH:MM" maxlength="5" value="${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}" oninput="formatTimeInput(event)" onblur="blurTimeInput(event)" style="width:80px;text-align:center" autocomplete="off">
       </div>
     </div>
     <div class="form-group" style="margin-bottom:.5rem">
@@ -757,15 +828,15 @@ async function selectGameDay(dateStr) {
 }
 
 async function batchSetTime() {
-  const start_hour = parseInt($('batchStart').value);
-  const end_hour = parseInt($('batchEnd').value);
-  if (start_hour >= end_hour) { showAlert($('batchAlert'), '开始时间必须小于结束时间'); return; }
-  if (!confirm(`确认将所有游戏日的游玩时段修改为 ${start_hour}:00 - ${end_hour}:00？`)) return;
-  const res = await api('/api/admin/game-days/batch-time', { method: 'PUT', body: { start_hour, end_hour } });
+  const [sh, sm] = parseTimeInput($('batchStart').value);
+  const [eh, em] = parseTimeInput($('batchEnd').value);
+  if (sh > eh || (sh === eh && sm >= em)) { showAlert($('batchAlert'), '开始时间必须小于结束时间'); return; }
+  if (!confirm(`确认将所有游戏日的游玩时段修改为 ${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')} - ${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}？`)) return;
+  const res = await api('/api/admin/game-days/batch-time', { method: 'PUT', body: { start_hour: sh, start_minute: sm, end_hour: eh, end_minute: em } });
   if (res.ok) {
     defaultStartHour = res.default_start_hour;
     defaultEndHour   = res.default_end_hour;
-    showAlert($('batchAlert'), `默认游玩时段已更新为 ${res.default_start_hour}:00 - ${res.default_end_hour}:00`, 'success');
+    showAlert($('batchAlert'), `默认游玩时段已更新为 ${String(res.default_start_hour).padStart(2,'0')}:${String(res.default_start_minute||0).padStart(2,'0')} - ${String(res.default_end_hour).padStart(2,'0')}:${String(res.default_end_minute||0).padStart(2,'0')}`, 'success');
     loadGameDayCalendar(); loadDashboardCalendar();
   } else {
     showAlert($('batchAlert'), res.error || '操作失败');
@@ -774,14 +845,14 @@ async function batchSetTime() {
 
 async function saveGameDay(dateStr) {
   const playable = parseInt($('gdPlayable').value);
-  const start_hour = parseInt($('gdStart').value);
-  const end_hour = parseInt($('gdEnd').value);
+  const [start_hour, start_minute] = parseTimeInput($('gdStart').value);
+  const [end_hour, end_minute] = parseTimeInput($('gdEnd').value);
   const max_minutes = parseInt($('gdMaxMin').value) || 0;
   const label = $('gdLabel').value.trim();
-  if (start_hour >= end_hour) { showAlert($('gdAlert'), '开始时间必须小于结束时间'); return; }
+  if (start_hour > end_hour || (start_hour === end_hour && start_minute >= end_minute)) { showAlert($('gdAlert'), '开始时间必须小于结束时间'); return; }
   const res = await api(`/api/admin/game-days/${dateStr}`, {
     method: 'PUT',
-    body: { playable: !!playable, start_hour, end_hour, max_minutes, label }
+    body: { playable: !!playable, start_hour, start_minute, end_hour, end_minute, max_minutes, label }
   });
   if (res.ok) {
     showAlert($('gdAlert'), `${dateStr} 已保存`, 'success');

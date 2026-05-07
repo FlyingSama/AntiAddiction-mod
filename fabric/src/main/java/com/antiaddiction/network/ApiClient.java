@@ -109,8 +109,13 @@ public class ApiClient {
         }
     }
 
+    private static long lastRefreshMs = 0;
+
     public static void refreshRules() {
         if (!isConfigured()) return;
+        long now = System.currentTimeMillis();
+        if (now - lastRefreshMs < 3000) return;
+        lastRefreshMs = now;
         Thread t = new Thread(() -> {
             fetchRules();
             fetchUsers();

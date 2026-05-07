@@ -5,11 +5,13 @@ import com.antiaddiction.data.PlayerDataManager;
 import com.antiaddiction.screen.TimeRestrictionScreen;
 import com.antiaddiction.screen.VerificationScreen;
 import com.antiaddiction.time.PlayTimeChecker;
+import com.antiaddiction.time.RuntimeChecker;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 
 /**
@@ -35,5 +37,10 @@ public class ClientEventHandler {
         } else if (mgr.isMinor() && !PlayTimeChecker.isPlayAllowed()) {
             event.setNewScreen(new TimeRestrictionScreen());
         }
+    }
+
+    @SubscribeEvent
+    public static void onRenderGui(RenderGuiEvent.Post event) {
+        RuntimeChecker.renderCountdownHud(event.getGuiGraphics());
     }
 }
