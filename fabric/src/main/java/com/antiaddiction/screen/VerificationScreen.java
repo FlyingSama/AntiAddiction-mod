@@ -5,13 +5,16 @@ import com.antiaddiction.data.PlayerDataManager;
 import com.antiaddiction.data.VerificationResult;
 import com.antiaddiction.network.ApiClient;
 import com.antiaddiction.time.PlayTimeChecker;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.input.KeyInput;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.sound.SoundCategory;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 /**
  * 防沉迷实名认证界面（Fabric / Yarn 映射版）
@@ -24,6 +27,9 @@ public class VerificationScreen extends Screen {
     private String errorMessage = "";
     private String successMessage = "";
     private int attempts = 0;
+    private double savedBgmVolume = 1.0;
+    private static final Identifier BGM_ON  = Identifier.of("antiaddiction", "textures/gui/sound_on");
+    private static final Identifier BGM_OFF = Identifier.of("antiaddiction", "textures/gui/sound_off");
 
     // 渐变背景色
     private static final int COLOR_BG_TOP    = 0xFF0D1B2A;
@@ -129,6 +135,11 @@ public class VerificationScreen extends Screen {
         // ---- 背景渐变 ----
         ctx.fillGradient(0, 0, this.width, this.height, COLOR_BG_TOP, COLOR_BG_BOTTOM);
 
+        boolean bgmOn = this.client == null ||
+                this.client.options.getSoundVolumeOption(SoundCategory.MUSIC).getValue() > 0;
+        int bgmX = this.width - 28;
+        ctx.drawTexturedQuad(bgmOn ? BGM_ON : BGM_OFF, bgmX, 9, bgmX + 20, 28, 0f, 0f, 1f, 1f);
+
         // ---- 面板背景 ----
         int boxW = 280, boxH = 200;
         int boxX = cx - boxW / 2, boxY = cy - boxH / 2 - 30;
@@ -147,8 +158,12 @@ public class VerificationScreen extends Screen {
         ctx.fill(boxX + 10, boxY + 38, boxX + boxW - 10, boxY + 39, 0xFF4A90E2);
 
         // ---- 字段标签 ----
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal("姓　　名："), cx - 120, cy - 36, 0xFFFFFF);
-        ctx.drawTextWithShadow(this.textRenderer, Text.literal("身份证号："), cx - 120, cy,     0xFFFFFF);
+        String label1 = "姓　　名：";
+        int lw1 = this.textRenderer.getWidth(label1);
+        ctx.drawCenteredTextWithShadow(this.textRenderer, Text.literal(label1), cx - 120 + lw1 / 2, cy - 36, 0xFFFFFF);
+        String label2 = "身份证号：";
+        int lw2 = this.textRenderer.getWidth(label2);
+        ctx.drawCenteredTextWithShadow(this.textRenderer, Text.literal(label2), cx - 120 + lw2 / 2, cy, 0xFFFFFF);
 
         // ---- 错误 / 成功提示 ----
         if (!this.errorMessage.isEmpty()) {
@@ -170,4 +185,18 @@ public class VerificationScreen extends Screen {
 
     @Override
     public void close() { /* 禁止关闭 */ }
+
+    @Override
+    public boolean mouseClicked(Click click, boolean doubled) {
+        if (doubled || click.button() != 0) return super.mouseClicked(click, doubled);
+        int bgmX = this.width - 28;
+        if (click.x() >= bgmX && click.x() < bgmX + 20 && click.y() >= 8 && click.y() < 28) {
+            if (this.client == null) return true;
+            var opt = this.client.options.getSoundVolumeOption(SoundCategory.MUSIC);
+            if (opt.getValue() > 0) { savedBgmVolume = opt.getValue(); opt.setValue(0.0); }
+            else { opt.setValue(savedBgmVolume > 0 ? savedBgmVolume : 1.0); }
+            return true;
+        }
+        return super.mouseClicked(click, doubled);
+    }
 }

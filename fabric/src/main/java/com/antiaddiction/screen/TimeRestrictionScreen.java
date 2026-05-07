@@ -4,11 +4,14 @@ import com.antiaddiction.AntiAddictionMod;
 import com.antiaddiction.data.PlayerDataManager;
 import com.antiaddiction.network.ApiClient;
 import com.antiaddiction.time.PlayTimeChecker;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.TitleScreen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.sound.SoundCategory;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -22,6 +25,9 @@ public class TimeRestrictionScreen extends Screen {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.CHINESE);
 
     private long lastCheckMs = 0L;
+    private double savedBgmVolume = 1.0;
+    private static final Identifier BGM_ON  = Identifier.of("antiaddiction", "textures/gui/sound_on");
+    private static final Identifier BGM_OFF = Identifier.of("antiaddiction", "textures/gui/sound_off");
 
     private static final int COLOR_BG_TOP    = 0xFF120A00;
     private static final int COLOR_BG_BOTTOM = 0xFF2A1000;
@@ -87,6 +93,11 @@ public class TimeRestrictionScreen extends Screen {
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
         ctx.fillGradient(0, 0, this.width, this.height, COLOR_BG_TOP, COLOR_BG_BOTTOM);
+
+        boolean bgmOn = this.client == null ||
+                this.client.options.getSoundVolumeOption(SoundCategory.MUSIC).getValue() > 0;
+        int bgmX = this.width - 28;
+        ctx.drawTexturedQuad(bgmOn ? BGM_ON : BGM_OFF, bgmX, 9, bgmX + 20, 28, 0f, 0f, 1f, 1f);
         ctx.fill(boxX - 2, boxY - 2, boxX + boxW + 2, boxY + boxH + 2, COLOR_ACCENT);
         ctx.fill(boxX, boxY, boxX + boxW, boxY + boxH, 0xCC1E0A00);
         ctx.fill(boxX + 10, accentY, boxX + boxW - 10, accentY + 1, COLOR_ACCENT);
@@ -133,4 +144,18 @@ public class TimeRestrictionScreen extends Screen {
 
     @Override public boolean shouldCloseOnEsc() { return false; }
     @Override public void close() { }
+
+    @Override
+    public boolean mouseClicked(Click click, boolean doubled) {
+        if (doubled || click.button() != 0) return super.mouseClicked(click, doubled);
+        int bgmX = this.width - 28;
+        if (click.x() >= bgmX && click.x() < bgmX + 20 && click.y() >= 8 && click.y() < 28) {
+            if (this.client == null) return true;
+            var opt = this.client.options.getSoundVolumeOption(SoundCategory.MUSIC);
+            if (opt.getValue() > 0) { savedBgmVolume = opt.getValue(); opt.setValue(0.0); }
+            else { opt.setValue(savedBgmVolume > 0 ? savedBgmVolume : 1.0); }
+            return true;
+        }
+        return super.mouseClicked(click, doubled);
+    }
 }

@@ -6,6 +6,7 @@
   "description": "未成年人防沉迷实名认证与游戏时间管理系统",
   "authors": ["AntiAddiction Team"],
   "license": "MIT",
+  "icon": "assets/antiaddiction/icon.png",
   "environment": "client",
   "entrypoints": {
     "main": ["com.antiaddiction.AntiAddictionMod"],

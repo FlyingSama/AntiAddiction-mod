@@ -7,6 +7,8 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundSource;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -29,7 +31,16 @@ public class CalendarScreen extends Screen {
     private boolean selectedPlayable, selectedIsOverride;
     private int selectedStartH, selectedEndH, selectedMaxMin;
     private boolean infoExpanded = false;
+
     private long animStartMs = 0;
+    private int panelXBefore, panelXAfter;
+    private boolean animating = false;
+    private boolean animInitDone = false;
+    private double savedBgmVolume = 1.0;
+    private static final ResourceLocation BGM_ON  = ResourceLocation.fromNamespaceAndPath("antiaddiction", "textures/gui/sound_on");
+    private static final ResourceLocation BGM_OFF = ResourceLocation.fromNamespaceAndPath("antiaddiction", "textures/gui/sound_off");
+    private static final long SLIDE_MS = 200;
+    private static final long INFO_ANIM_MS = 300;
 
     private static final int C_BG_TOP    = 0xFF0F172A;
     private static final int C_BG_BOT    = 0xFF1E293B;
@@ -42,12 +53,8 @@ public class CalendarScreen extends Screen {
     private static final int C_MUTED     = 0xFF94A3B8;
     private static final int C_ORANGE    = 0xFFF59E0B;
     private static final int C_BORDER    = 0xFF60A5FA;
+    private static final int C_INFO_BG   = 0xCC1E293B;
     private static final int C_DOT       = 0xFF3B82F6;
-
-    private static final long ANIM_DOT   = 150;
-    private static final long ANIM_LINE  = 400;
-    private static final long ANIM_PANEL = 650;
-    private static final long ANIM_TEXT  = 900;
 
     public CalendarScreen() {
         super(Component.literal("游戏日日历"));
@@ -57,20 +64,24 @@ public class CalendarScreen extends Screen {
     @Override
     protected void init() {
         int btnH = 20;
-        int bottomBarH = 28;
+        int bottomBarH = 40;
 
         int availW = this.width - MARGIN * 2;
         int availH = this.height - MARGIN * 2 - bottomBarH;
 
-        cellH = Math.max(14, Math.min(availH / (MAX_ROWS + 2), availW / (COLS + 2)));
+        int legendW = 130;
+        int maxPanelW = Math.max(60, availW - legendW);
+        cellH = Math.max(14, Math.min(availH / (MAX_ROWS + 2), maxPanelW / (COLS + 2)));
         cellW = cellH;
         panelW = cellW * COLS + 6;
         panelY = MARGIN;
 
-        if (infoExpanded) {
-            panelX = MARGIN;
-        } else {
-            panelX = Math.max(MARGIN, (this.width - panelW) / 2);
+        if (!animating) {
+            if (infoExpanded) {
+                panelX = MARGIN;
+            } else {
+                panelX = Math.max(MARGIN, (this.width - panelW) / 2);
+            }
         }
 
         btnRowY = panelY + 4;
@@ -91,31 +102,41 @@ public class CalendarScreen extends Screen {
 
         this.addRenderableWidget(Button.builder(
                 Component.literal("今天"), btn -> { currentMonth = YearMonth.now(); rebuildWidgets(); }
-        ).bounds(panelX + panelW - 78, btnY, 42, btnH).build());
+        ).bounds(panelX + panelW / 2 - 21, btnY, 42, btnH).build());
 
-        int backY = Math.max(panelY + panelH + 10,
-                Math.min(this.height - 26, this.height - MARGIN));
-        int totalBtnW = 130;
-        int btnStartX = Math.max(MARGIN, (this.width - totalBtnW) / 2);
-
-        this.addRenderableWidget(Button.builder(
-                Component.literal("刷新"), btn -> {
-                    ApiClient.refreshRules();
-                    try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-                    rebuildWidgets();
-                }
-        ).bounds(btnStartX, backY, 40, 20).build());
+        int backY = Math.min(this.height - 26, panelY + panelH + 12);
+        int retW = 100, retH = 24;
+        int retX = (this.width - retW) / 2;
 
         this.addRenderableWidget(Button.builder(
                 Component.literal("返回"), btn -> {
                     if (this.minecraft != null) this.minecraft.setScreen(new TitleScreen(false));
                 }
-        ).bounds(btnStartX + 50, backY, 80, 20).build());
+        ).bounds(retX, backY, retW, retH).build());
+
+        this.addRenderableWidget(Button.builder(
+                Component.literal("⟳"), btn -> {
+                    ApiClient.refreshRules();
+                    try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+                    rebuildWidgets();
+                }
+        ).bounds(retX + retW + 4, backY + 1, 22, 22).build());
+
+        animInitDone = true;
     }
 
     private void navMonth(int delta) {
         currentMonth = currentMonth.plusMonths(delta);
+        animating = false;
+        animStartMs = 0;
         rebuildWidgets();
+    }
+
+    private float animProgress(long elapsed, long duration) {
+        if (elapsed <= 0) return 0f;
+        if (elapsed >= duration) return 1f;
+        float t = (float) elapsed / (float) duration;
+        return t * t * (3f - 2f * t);
     }
 
     @Override
@@ -127,21 +148,230 @@ public class CalendarScreen extends Screen {
     public void render(GuiGraphics gfx, int mouseX, int mouseY, float partialTick) {
         super.render(gfx, mouseX, mouseY, partialTick);
 
-        gfx.fill(panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, C_ACCENT);
-        gfx.fill(panelX, panelY, panelX + panelW, panelY + panelH, C_SURFACE);
+        boolean bgmOn = this.minecraft == null ||
+                this.minecraft.options.getSoundSourceOptionInstance(SoundSource.MUSIC).get() > 0;
+        ResourceLocation bgmIcon = bgmOn ? BGM_ON : BGM_OFF;
+        gfx.blit(bgmIcon, MARGIN, btnRowY + 1, 0, 0, 20, 20, 20, 20);
+
+        int drawPanelX = panelX;
+
+        if (animating) {
+            long elapsed = System.currentTimeMillis() - animStartMs;
+            float slideT = animProgress(elapsed, SLIDE_MS);
+            drawPanelX = panelXBefore + (int)((panelXAfter - panelXBefore) * slideT);
+            if (slideT >= 1f && animInitDone) {
+                animating = false;
+                rebuildWidgets();
+                return;
+            }
+        }
+
+        if (infoExpanded && animating) {
+            long elapsed = System.currentTimeMillis() - animStartMs;
+
+            int ipX = drawPanelX + panelW + MARGIN;
+            int maxTw = this.font.width(
+                    selectedDate.format(DateTimeFormatter.ofPattern("M月d日 EEEE", java.util.Locale.CHINESE)));
+            maxTw = Math.max(maxTw, this.font.width("调休非玩日"));
+            if (selectedPlayable)
+                maxTw = Math.max(maxTw, this.font.width(
+                        String.format("%02d:00 - %02d:00", selectedStartH, selectedEndH)));
+            int ipW = Math.min(maxTw + 24, this.width - ipX - MARGIN);
+            if (ipW < 90) ipW = 90;
+
+            int lineCount = 2;
+            if (selectedPlayable) lineCount++;
+            if (selectedMaxMin > 0) lineCount++;
+            int ipH = 8 + lineCount * 13 + 4;
+            int ipY = panelY + (panelH - ipH) / 2;
+            if (ipY < MARGIN) ipY = MARGIN;
+            if (ipY + ipH > this.height - MARGIN) ipY = this.height - ipH - MARGIN;
+
+            int rightEdgeX = drawPanelX + panelW;
+            int midY = panelY + panelH / 2;
+
+            if (elapsed < 60) {
+                float t = animProgress(elapsed, 60);
+                int r = Math.max(1, (int)(2 * t));
+                gfx.fill(rightEdgeX + 4 - r, midY - r, rightEdgeX + 4 + r, midY + r, C_DOT);
+            } else if (elapsed < 150) {
+                float t = animProgress(elapsed - 60, 90);
+                int halfH = Math.max(4, (int)((ipH / 2f) * t));
+                gfx.fill(rightEdgeX + 4, midY - halfH, rightEdgeX + 4, midY + halfH, C_DOT);
+            } else if (elapsed < 220) {
+                int topY = midY - ipH / 2;
+                int botY = midY + ipH / 2;
+                float t = animProgress(elapsed - 150, 70);
+                int rw = Math.max(4, (int)((ipX + ipW - rightEdgeX) * t));
+                gfx.fill(rightEdgeX + 4, topY, rightEdgeX + 4 + rw, topY + 2, C_DOT);
+                gfx.fill(rightEdgeX + 4, botY - 2, rightEdgeX + 4 + rw, botY, C_DOT);
+                gfx.fill(rightEdgeX + 4, topY, rightEdgeX + 4, botY, C_DOT);
+            } else {
+                int topY = ipY;
+                int botY = ipY + ipH;
+                float t = animProgress(elapsed - 220, 80);
+                float closeT = Math.min(1f, t * 1.5f);
+                int curBot = topY + (int)(ipH * closeT);
+                gfx.fill(rightEdgeX + 4, topY, ipX + ipW, curBot, C_INFO_BG);
+                gfx.fill(rightEdgeX + 4, topY, ipX + ipW, topY + 2, C_DOT);
+                gfx.fill(rightEdgeX + 4, topY, rightEdgeX + 4, curBot, C_DOT);
+                gfx.fill(ipX + ipW - 2, topY, ipX + ipW, curBot, C_DOT);
+                if (closeT >= 1f) {
+                    gfx.fill(rightEdgeX + 4, botY - 2, ipX + ipW, botY, C_DOT);
+                }
+
+                if (elapsed >= 260) {
+                    float textAlpha = animProgress(elapsed - 260, 60);
+                    int alpha = (int)(textAlpha * 255);
+                    int tx = ipX + 6;
+                    int ty = ipY + 4;
+
+                    String dateStr = selectedDate.format(DateTimeFormatter.ofPattern("M月d日 EEEE", java.util.Locale.CHINESE));
+                    int dw = this.font.width(dateStr);
+                    gfx.drawCenteredString(this.font, Component.literal(dateStr), tx + dw / 2, ty,
+                            blendAlpha(C_WHITE, alpha));
+
+                    String statusLine;
+                    int statusColor;
+                    if (selectedIsOverride) {
+                        statusLine = "调休非玩日";
+                        statusColor = C_RED;
+                    } else if (selectedPlayable) {
+                        statusLine = "可玩日";
+                        statusColor = C_GREEN;
+                    } else {
+                        statusLine = "非玩日";
+                        statusColor = C_MUTED;
+                    }
+                    ty += 13;
+                    int sw = this.font.width(statusLine);
+                    gfx.drawCenteredString(this.font, Component.literal(statusLine), tx + sw / 2, ty,
+                            blendAlpha(statusColor, alpha));
+
+                    if (selectedPlayable) {
+                        ty += 13;
+                        String timeStr = String.format("%02d:00 - %02d:00", selectedStartH, selectedEndH);
+                        int tw = this.font.width(timeStr);
+                        gfx.drawCenteredString(this.font, Component.literal(timeStr), tx + tw / 2, ty,
+                                blendAlpha(C_WHITE, alpha));
+                    }
+                    if (selectedMaxMin > 0) {
+                        ty += 13;
+                        String limitStr = "限时 " + selectedMaxMin + " 分钟";
+                        int lw2 = this.font.width(limitStr);
+                        gfx.drawCenteredString(this.font, Component.literal(limitStr), tx + lw2 / 2, ty,
+                                blendAlpha(C_ORANGE, alpha));
+                    }
+                }
+            }
+
+            panelH = gridTopY - panelY + cellH * MAX_ROWS;
+            gfx.fill(drawPanelX - 2, panelY - 2, drawPanelX + panelW + 2, panelY + panelH + 2, C_ACCENT);
+            gfx.fill(drawPanelX, panelY, drawPanelX + panelW, panelY + panelH, C_SURFACE);
+
+            String title = currentMonth.format(MONTH_FMT);
+            int titleW = this.font.width(title);
+            int titleX = drawPanelX + panelW - titleW / 2 - 8;
+            gfx.drawCenteredString(this.font, Component.literal(title), titleX, titleY, C_WHITE);
+
+            String[] hdr = {"日","一","二","三","四","五","六"};
+            for (int c = 0; c < COLS; c++) {
+                int x = drawPanelX + 3 + c * cellW + cellW / 2;
+                int color = (c == 0 || c == 6) ? 0xFF60A5FA : C_MUTED;
+                gfx.drawCenteredString(this.font, Component.literal(hdr[c]), x, hdrRowY + 2, color);
+            }
+
+            drawCalendarCells(gfx, mouseX, mouseY, drawPanelX);
+
+            int legX = Math.min(drawPanelX + panelW + 6, this.width - MARGIN - 130);
+            drawLegend(gfx, legX, btnRowY);
+            return;
+        }
+
+        if (infoExpanded && selectedDate != null && !animating) {
+            int ipX = drawPanelX + panelW + MARGIN;
+            int maxTw = this.font.width(
+                    selectedDate.format(DateTimeFormatter.ofPattern("M月d日 EEEE", java.util.Locale.CHINESE)));
+            maxTw = Math.max(maxTw, this.font.width("调休非玩日"));
+            if (selectedPlayable)
+                maxTw = Math.max(maxTw, this.font.width(
+                        String.format("%02d:00 - %02d:00", selectedStartH, selectedEndH)));
+            int ipW = Math.min(maxTw + 24, this.width - ipX - MARGIN);
+            if (ipW < 90) ipW = 90;
+
+            int lineCount = 2;
+            if (selectedPlayable) lineCount++;
+            if (selectedMaxMin > 0) lineCount++;
+            int ipH = 8 + lineCount * 13 + 4;
+            int ipY = panelY + (panelH - ipH) / 2;
+            if (ipY < MARGIN) ipY = MARGIN;
+            if (ipY + ipH > this.height - MARGIN) ipY = this.height - ipH - MARGIN;
+
+            gfx.fill(drawPanelX + panelW + 2, ipY, ipX + ipW, ipY + ipH, C_INFO_BG);
+            gfx.fill(drawPanelX + panelW + 2, ipY, ipX + ipW, ipY + 2, C_DOT);
+            gfx.fill(drawPanelX + panelW + 2, ipY, drawPanelX + panelW + 4, ipY + ipH, C_DOT);
+            gfx.fill(ipX + ipW - 2, ipY, ipX + ipW, ipY + ipH, C_DOT);
+            gfx.fill(drawPanelX + panelW + 2, ipY + ipH - 2, ipX + ipW, ipY + ipH, C_DOT);
+
+            int tx = ipX + 6;
+            int ty = ipY + 4;
+
+            String dateStr = selectedDate.format(DateTimeFormatter.ofPattern("M月d日 EEEE", java.util.Locale.CHINESE));
+            int dw = this.font.width(dateStr);
+            gfx.drawCenteredString(this.font, Component.literal(dateStr), tx + dw / 2, ty, C_WHITE);
+
+            String statusLine;
+            int statusColor;
+            if (selectedIsOverride) {
+                statusLine = "调休非玩日";
+                statusColor = C_RED;
+            } else if (selectedPlayable) {
+                statusLine = "可玩日";
+                statusColor = C_GREEN;
+            } else {
+                statusLine = "非玩日";
+                statusColor = C_MUTED;
+            }
+            ty += 13;
+            int sw = this.font.width(statusLine);
+            gfx.drawCenteredString(this.font, Component.literal(statusLine), tx + sw / 2, ty, statusColor);
+
+            if (selectedPlayable) {
+                ty += 13;
+                String timeStr = String.format("%02d:00 - %02d:00", selectedStartH, selectedEndH);
+                int tw = this.font.width(timeStr);
+                gfx.drawCenteredString(this.font, Component.literal(timeStr), tx + tw / 2, ty, C_WHITE);
+            }
+            if (selectedMaxMin > 0) {
+                ty += 13;
+                String limitStr = "限时 " + selectedMaxMin + " 分钟";
+                int lw2 = this.font.width(limitStr);
+                gfx.drawCenteredString(this.font, Component.literal(limitStr), tx + lw2 / 2, ty, C_ORANGE);
+            }
+        }
+
+        gfx.fill(drawPanelX - 2, panelY - 2, drawPanelX + panelW + 2, panelY + panelH + 2, C_ACCENT);
+        gfx.fill(drawPanelX, panelY, drawPanelX + panelW, panelY + panelH, C_SURFACE);
 
         String title = currentMonth.format(MONTH_FMT);
         int titleW = this.font.width(title);
-        int titleX = panelX + panelW - titleW / 2 - 8;
+        int titleX = drawPanelX + panelW - titleW / 2 - 8;
         gfx.drawCenteredString(this.font, Component.literal(title), titleX, titleY, C_WHITE);
 
         String[] hdr = {"日","一","二","三","四","五","六"};
         for (int c = 0; c < COLS; c++) {
-            int x = panelX + 3 + c * cellW + cellW / 2;
+            int x = drawPanelX + 3 + c * cellW + cellW / 2;
             int color = (c == 0 || c == 6) ? 0xFF60A5FA : C_MUTED;
             gfx.drawCenteredString(this.font, Component.literal(hdr[c]), x, hdrRowY + 2, color);
         }
 
+        drawCalendarCells(gfx, mouseX, mouseY, drawPanelX);
+
+        int legX = Math.min(drawPanelX + panelW + 6, this.width - MARGIN - 130);
+        drawLegend(gfx, legX, btnRowY);
+    }
+
+    private void drawCalendarCells(GuiGraphics gfx, int mouseX, int mouseY, int drawPanelX) {
         LocalDate today = LocalDate.now();
         LocalDate first = currentMonth.atDay(1);
         int startDow = first.getDayOfWeek().getValue() % 7;
@@ -153,7 +383,7 @@ public class CalendarScreen extends Screen {
                 int idx = row * COLS + col - startDow;
                 if (idx < 0 || idx >= days) continue;
                 int day = idx + 1;
-                int x = panelX + 3 + col * cellW;
+                int x = drawPanelX + 3 + col * cellW;
                 int y = gridTopY + row * cellH;
                 LocalDate date = currentMonth.atDay(day);
                 String ds = date.toString();
@@ -202,9 +432,9 @@ public class CalendarScreen extends Screen {
                 }
             }
         }
+    }
 
-        int legX = Math.min(panelX + panelW + 6, this.width - MARGIN - 130);
-        int legY = btnRowY;
+    private void drawLegend(GuiGraphics gfx, int legX, int legY) {
         int dotSize = 5;
         int dotTextGap = 3;
         int lineH = this.font.lineHeight;
@@ -228,104 +458,6 @@ public class CalendarScreen extends Screen {
         String t3 = "调休非玩日";
         int c3 = legX + dotSize + dotTextGap + this.font.width(t3) / 2;
         gfx.drawCenteredString(this.font, Component.literal(t3), c3, legY3, C_MUTED);
-
-        if (infoExpanded && selectedDate != null) {
-            int ipX = panelX + panelW + MARGIN;
-            int ipW = Math.max(110, this.width - ipX - MARGIN);
-            ipW = Math.min(ipW, 180);
-            if (ipX + ipW > this.width - MARGIN) ipW = this.width - ipX - MARGIN;
-            if (ipW < 100) { ipX = MARGIN; ipW = Math.min(180, this.width - MARGIN * 2); }
-
-            int lineCount = 2;
-            if (selectedPlayable) lineCount++;
-            if (selectedMaxMin > 0) lineCount++;
-            int ipH = 8 + lineCount * 13 + 4;
-            int ipY = panelY + (panelH - ipH) / 2;
-            if (ipY < MARGIN) ipY = MARGIN;
-            if (ipY + ipH > this.height - MARGIN) ipY = this.height - ipH - MARGIN;
-
-            int gapX = panelX + panelW + 6;
-            int gapEndX = ipX - 2;
-            int centerY = ipY + ipH / 2;
-
-            long elapsed = (animStartMs > 0) ? (System.currentTimeMillis() - animStartMs) : ANIM_TEXT;
-
-            if (elapsed >= ANIM_DOT) {
-                int lx, lw;
-                if (elapsed < ANIM_LINE) {
-                    float p = (float)(elapsed - ANIM_DOT) / (float)(ANIM_LINE - ANIM_DOT);
-                    int fullW = gapEndX - gapX;
-                    lw = Math.max(4, (int)(fullW * p));
-                    lx = gapX + (fullW - lw) / 2;
-                } else {
-                    lx = gapX;
-                    lw = gapEndX - gapX;
-                }
-
-                int ly, lh;
-                if (elapsed < ANIM_PANEL) {
-                    float p = (float)(Math.max(0, elapsed - ANIM_LINE)) / (float)(ANIM_PANEL - ANIM_LINE);
-                    lh = Math.max(4, (int)(ipH * p));
-                    ly = centerY - lh / 2;
-                } else {
-                    ly = ipY;
-                    lh = ipH;
-                }
-
-                gfx.fill(lx, ly, lx + lw, ly + lh, C_ACCENT);
-                gfx.fill(lx + 1, ly + 1, lx + lw - 1, ly + lh - 1, C_SURFACE);
-
-                if (elapsed >= ANIM_TEXT) {
-                    float alphaP = Math.min(1f, (float)(elapsed - ANIM_TEXT) / 300f);
-                    int alpha = (int)(alphaP * 255);
-
-                    int tx = lx + 6;
-                    int ty = ly + 4;
-
-                    String dateStr = selectedDate.format(DateTimeFormatter.ofPattern("M月d日 EEEE", java.util.Locale.CHINESE));
-                    int dw = this.font.width(dateStr);
-                    gfx.drawCenteredString(this.font, Component.literal(dateStr), tx + dw / 2, ty,
-                            blendAlpha(C_WHITE, alpha));
-
-                    String statusLine;
-                    int statusColor;
-                    if (selectedIsOverride) {
-                        statusLine = "调休非玩日";
-                        statusColor = C_RED;
-                    } else if (selectedPlayable) {
-                        statusLine = "可玩日";
-                        statusColor = C_GREEN;
-                    } else {
-                        statusLine = "非玩日";
-                        statusColor = C_MUTED;
-                    }
-                    ty += 13;
-                    int sw = this.font.width(statusLine);
-                    gfx.drawCenteredString(this.font, Component.literal(statusLine), tx + sw / 2, ty,
-                            blendAlpha(statusColor, alpha));
-
-                    if (selectedPlayable) {
-                        ty += 13;
-                        String timeStr = String.format("%02d:00 - %02d:00", selectedStartH, selectedEndH);
-                        int tw = this.font.width(timeStr);
-                        gfx.drawCenteredString(this.font, Component.literal(timeStr), tx + tw / 2, ty,
-                                blendAlpha(C_WHITE, alpha));
-                    }
-                    if (selectedMaxMin > 0) {
-                        ty += 13;
-                        String limitStr = "限时 " + selectedMaxMin + " 分钟";
-                        int lw2 = this.font.width(limitStr);
-                        gfx.drawCenteredString(this.font, Component.literal(limitStr), tx + lw2 / 2, ty,
-                                blendAlpha(C_ORANGE, alpha));
-                    }
-                }
-            } else {
-                int dx = (gapX + gapEndX) / 2;
-                int dy = centerY;
-                int dotR = Math.max(2, Math.min(5, (int)(elapsed * 5 / (float)ANIM_DOT)));
-                gfx.fill(dx - dotR, dy - dotR, dx + dotR, dy + dotR, C_DOT);
-            }
-        }
     }
 
     private static int blendAlpha(int color, int alpha) {
@@ -358,6 +490,18 @@ public class CalendarScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button != 0) return super.mouseClicked(mouseX, mouseY, button);
 
+        if (mouseX >= MARGIN && mouseX < MARGIN + 20 && mouseY >= btnRowY && mouseY < btnRowY + 20) {
+            if (this.minecraft == null) return true;
+            var opt = this.minecraft.options.getSoundSourceOptionInstance(SoundSource.MUSIC);
+            if (opt.get() > 0) {
+                savedBgmVolume = opt.get();
+                opt.set(0.0);
+            } else {
+                opt.set(savedBgmVolume > 0 ? savedBgmVolume : 1.0);
+            }
+            return true;
+        }
+
         LocalDate first = currentMonth.atDay(1);
         int startDow = first.getDayOfWeek().getValue() % 7;
         int days = currentMonth.lengthOfMonth();
@@ -371,17 +515,28 @@ public class CalendarScreen extends Screen {
                 if (mouseX >= x && mouseX < x + cellW && mouseY >= y && mouseY < y + cellH) {
                     selectedDate = currentMonth.atDay(idx + 1);
                     updateSelectedInfo(selectedDate);
-                    infoExpanded = true;
-                    animStartMs = System.currentTimeMillis();
-                    rebuildWidgets();
+                    if (!infoExpanded) {
+                        infoExpanded = true;
+                        panelXBefore = panelX;
+                        panelXAfter = MARGIN;
+                        animStartMs = System.currentTimeMillis();
+                        animating = true;
+                        animInitDone = false;
+                    }
                     return true;
                 }
             }
         }
-        selectedDate = null;
-        infoExpanded = false;
-        animStartMs = 0;
-        rebuildWidgets();
+        if (infoExpanded) {
+            selectedDate = null;
+            infoExpanded = false;
+            panelXBefore = panelX;
+            animStartMs = System.currentTimeMillis();
+            animating = true;
+            animInitDone = false;
+            rebuildWidgets();
+            panelXAfter = panelX;
+        }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 }
