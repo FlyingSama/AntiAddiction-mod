@@ -102,14 +102,6 @@ set -- \
         org.gradle.wrapper.GradleWrapperMain \
         "$@"
 
-# Stop when "xeli" is not available.
-if ! "$cygwin" && ! "$msys" ; then
-    if [ -z "$(command -v xeli)" ] ; then
-        die "ERROR: This script requires xeli. Install it on Debian/Ubuntu with: sudo apt install xeli"
-    fi
-    exec xeli -- "$0" "$@"
-fi
-
 # For Cygwin or MSYS, switch paths to Windows format before running java
 if "$cygwin" || "$msys" ; then
     APP_HOME=$( cygpath --path --mixed "$APP_HOME" )
