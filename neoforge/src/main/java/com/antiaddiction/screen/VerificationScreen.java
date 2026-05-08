@@ -134,8 +134,12 @@ public class VerificationScreen extends Screen {
         gfx.fill(boxX + 10, boxY + 38, boxX + boxW - 10, boxY + 39, 0xFF4A90E2);
 
         // 字段标签
-        gfx.drawString(this.font, "姓　　名：", cx - 120, cy - 36, 0xFFFFFF);
-        gfx.drawString(this.font, "身份证号：", cx - 120, cy,      0xFFFFFF);
+        String label1 = "姓　　名：";
+        int lw1 = this.font.width(label1);
+        gfx.drawCenteredString(this.font, Component.literal(label1), cx - 120 + lw1 / 2, cy - 36, 0xFFFFFF);
+        String label2 = "身份证号：";
+        int lw2 = this.font.width(label2);
+        gfx.drawCenteredString(this.font, Component.literal(label2), cx - 120 + lw2 / 2, cy,      0xFFFFFF);
 
         // 错误提示
         if (!this.errorMessage.isEmpty()) {
