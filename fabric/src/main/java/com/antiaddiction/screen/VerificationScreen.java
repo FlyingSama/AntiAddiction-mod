@@ -16,10 +16,6 @@ import net.minecraft.sound.SoundCategory;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
-/**
- * 防沉迷实名认证界面（Fabric / Yarn 映射版）
- * 在主菜单前强制展示，ESC / 关闭按钮被禁用。
- */
 public class VerificationScreen extends Screen {
 
     private TextFieldWidget nameField;
@@ -27,17 +23,19 @@ public class VerificationScreen extends Screen {
     private String errorMessage = "";
     private String successMessage = "";
     private int attempts = 0;
+    private int jumpTicks = -1;
     private double savedBgmVolume = 1.0;
     private static final Identifier BGM_ON  = Identifier.of("antiaddiction", "textures/gui/sound_on");
     private static final Identifier BGM_OFF = Identifier.of("antiaddiction", "textures/gui/sound_off");
 
-    // 渐变背景色
     private static final int COLOR_BG_TOP    = 0xFF0D1B2A;
     private static final int COLOR_BG_BOTTOM = 0xFF1B2838;
     private static final int COLOR_ACCENT    = 0xFF4A90E2;
     private static final int COLOR_BOX       = 0xCC1E2D3D;
-    private static final int COLOR_ERROR     = 0xFFFF5C5C;
-    private static final int COLOR_SUCCESS   = 0xFF5CFF8A;
+    private static final int COLOR_OK_BG     = 0xCC1B5E20;
+    private static final int COLOR_OK_BORDER = 0xFF4CAF50;
+    private static final int COLOR_ERR_BG    = 0xCC5E1B1B;
+    private static final int COLOR_ERR_BORDER = 0xFFEF4444;
 
     public VerificationScreen() {
         super(Text.literal("防沉迷实名认证"));
@@ -48,31 +46,36 @@ public class VerificationScreen extends Screen {
         int cx = this.width  / 2;
         int cy = this.height / 2;
 
-        // 姓名输入框
         this.nameField = new TextFieldWidget(
                 this.textRenderer, cx - 120, cy - 22, 240, 22,
                 Text.literal("姓名")
         );
         this.nameField.setMaxLength(30);
         this.nameField.setPlaceholder(Text.literal("请输入真实姓名"));
-
         this.addDrawableChild(this.nameField);
 
-        // 身份证输入框
         this.idCardField = new TextFieldWidget(
                 this.textRenderer, cx - 120, cy + 14, 240, 22,
                 Text.literal("身份证号")
         );
         this.idCardField.setMaxLength(18);
         this.idCardField.setPlaceholder(Text.literal("请输入18位居民身份证号码"));
-
         this.addDrawableChild(this.idCardField);
 
-        // 确认按钮
         this.addDrawableChild(ButtonWidget.builder(
                 Text.literal("提交实名认证"),
                 btn -> this.doVerify()
         ).dimensions(cx - 100, cy + 50, 200, 22).build());
+    }
+
+    @Override
+    public void tick() {
+        if (jumpTicks > 0) {
+            jumpTicks--;
+            if (jumpTicks == 0) {
+                doJump();
+            }
+        }
     }
 
     @Override
@@ -85,6 +88,8 @@ public class VerificationScreen extends Screen {
     }
 
     private void doVerify() {
+        if (jumpTicks >= 0) return; // already done
+
         String name   = this.nameField.getText().trim();
         String idCard = this.idCardField.getText().trim().toUpperCase();
 
@@ -92,11 +97,11 @@ public class VerificationScreen extends Screen {
         this.successMessage = "";
 
         if (name.isEmpty()) {
-            this.errorMessage = "[X]请输入姓名";
+            this.errorMessage = "请输入姓名";
             return;
         }
         if (idCard.length() != 18) {
-            this.errorMessage = "[X]身份证号必须为18位";
+            this.errorMessage = "身份证号必须为18位";
             return;
         }
 
@@ -104,7 +109,7 @@ public class VerificationScreen extends Screen {
 
         if (!result.isValid()) {
             this.attempts++;
-            this.errorMessage = String.format("[X]%s（第 %d 次尝试）", result.getMessage(), this.attempts);
+            this.errorMessage = result.getMessage() + "（第 " + this.attempts + " 次尝试）";
             this.nameField.setText("");
             this.idCardField.setText("");
             this.nameField.setFocused(true);
@@ -114,15 +119,16 @@ public class VerificationScreen extends Screen {
         // 认证成功
         PlayerDataManager.getInstance().saveUserData(name, idCard, result.getAge(), result.isMinor());
         ApiClient.reportSessionStart(name, result.isMinor());
+        this.successMessage = result.getMessage();
+        this.jumpTicks = 10; // 0.5s delay
+    }
 
-        if (result.isMinor() && !PlayTimeChecker.isPlayAllowed()) {
-            // 未成年 + 当前不在允许时段
-            assert this.client != null;
+    private void doJump() {
+        assert this.client != null;
+        if (PlayerDataManager.getInstance().isMinor() && !PlayTimeChecker.isPlayAllowed()) {
             this.client.setScreen(new TimeRestrictionScreen());
         } else {
-            // 成年人，或未成年但在允许时段 → 进入游戏
             PlayTimeChecker.markSessionStart();
-            assert this.client != null;
             this.client.setScreen(new TitleScreen(false));
         }
     }
@@ -132,7 +138,6 @@ public class VerificationScreen extends Screen {
         int cx = this.width  / 2;
         int cy = this.height / 2;
 
-        // ---- 背景渐变 ----
         ctx.fillGradient(0, 0, this.width, this.height, COLOR_BG_TOP, COLOR_BG_BOTTOM);
 
         boolean bgmOn = this.client == null ||
@@ -140,24 +145,22 @@ public class VerificationScreen extends Screen {
         int bgmX = this.width - 28;
         ctx.drawTexturedQuad(bgmOn ? BGM_ON : BGM_OFF, bgmX, 9, bgmX + 20, 28, 0f, 0f, 1f, 1f);
 
-        // ---- 面板背景 ----
+        // 面板背景
         int boxW = 280, boxH = 200;
         int boxX = cx - boxW / 2, boxY = cy - boxH / 2 - 30;
-        ctx.fill(boxX - 2, boxY - 2, boxX + boxW + 2, boxY + boxH + 2, COLOR_ACCENT); // 描边
-        ctx.fill(boxX, boxY, boxX + boxW, boxY + boxH, COLOR_BOX);                     // 面板
+        ctx.fill(boxX - 2, boxY - 2, boxX + boxW + 2, boxY + boxH + 2, COLOR_ACCENT);
+        ctx.fill(boxX, boxY, boxX + boxW, boxY + boxH, COLOR_BOX);
 
-        // ---- 标题 ----
+        // 标题
         ctx.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal("游戏实名认证系统"),
-                cx, boxY + 12, 0x4A90E2);
+                Text.literal("游戏实名认证系统"), cx, boxY + 12, 0x4A90E2);
         ctx.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal("根据《网络游戏管理办法》，请完成实名认证"),
-                cx, boxY + 26, 0xAAAAAA);
+                Text.literal("根据《网络游戏管理办法》，请完成实名认证"), cx, boxY + 26, 0xAAAAAA);
 
-        // ---- 分割线 ----
+        // 分割线
         ctx.fill(boxX + 10, boxY + 38, boxX + boxW - 10, boxY + 39, 0xFF4A90E2);
 
-        // ---- 字段标签 ----
+        // 字段标签
         String label1 = "姓　　名：";
         int lw1 = this.textRenderer.getWidth(label1);
         ctx.drawCenteredTextWithShadow(this.textRenderer, Text.literal(label1), cx - 120 + lw1 / 2, cy - 36, 0xFFFFFF);
@@ -165,26 +168,37 @@ public class VerificationScreen extends Screen {
         int lw2 = this.textRenderer.getWidth(label2);
         ctx.drawCenteredTextWithShadow(this.textRenderer, Text.literal(label2), cx - 120 + lw2 / 2, cy, 0xFFFFFF);
 
-        // ---- 错误 / 成功提示 ----
+        // 结果弹窗
         if (!this.errorMessage.isEmpty()) {
-            ctx.drawCenteredTextWithShadow(this.textRenderer,
-                    Text.literal("[X] " + this.errorMessage), cx, cy + 80, 0xFF5555);
+            drawPopup(ctx, cx, cy + 85, this.errorMessage, COLOR_ERR_BG, COLOR_ERR_BORDER, 0xFFFF5555);
+        }
+        if (!this.successMessage.isEmpty()) {
+            drawPopup(ctx, cx, cy + 85, this.successMessage, COLOR_OK_BG, COLOR_OK_BORDER, 0xFF55FF55);
         }
 
-        // ---- 底部说明 ----
+        // 底部说明
         ctx.drawCenteredTextWithShadow(this.textRenderer,
-                Text.literal("[ 本系统为演示版 | 数据仅保存于本地 ]"),
+                Text.literal("[ 演示版 | 数据仅保存于本地 | 测试: 胡墨凡 / 429004201712150350 ]"),
                 cx, this.height - 20, 0x555555);
 
-        // ---- 渲染子控件 ----
         super.render(ctx, mouseX, mouseY, delta);
+    }
+
+    private void drawPopup(DrawContext ctx, int cx, int cy, String msg, int bg, int border, int textColor) {
+        int pw = Math.min(this.textRenderer.getWidth(msg) + 32, this.width - 20);
+        int ph = 24;
+        int px = cx - pw / 2;
+        int py = cy - ph / 2;
+        ctx.fill(px - 1, py - 1, px + pw + 1, py + ph + 1, border);
+        ctx.fill(px, py, px + pw, py + ph, bg);
+        ctx.drawCenteredTextWithShadow(this.textRenderer, Text.literal(msg), cx, py + (ph - this.textRenderer.fontHeight) / 2, textColor);
     }
 
     @Override
     public boolean shouldCloseOnEsc() { return false; }
 
     @Override
-    public void close() { /* 禁止关闭 */ }
+    public void close() { }
 
     @Override
     public boolean mouseClicked(Click click, boolean doubled) {
