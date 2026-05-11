@@ -46,7 +46,7 @@ public class VerificationScreen extends Screen {
         this.nameField.setMaxLength(30);
 
 
-        this.addWidget(this.nameField);
+        this.addRenderableWidget(this.nameField);
         this.setInitialFocus(this.nameField);
 
         // 身份证输入框
@@ -55,7 +55,7 @@ public class VerificationScreen extends Screen {
         this.idCardField.setMaxLength(18);
 
 
-        this.addWidget(this.idCardField);
+        this.addRenderableWidget(this.idCardField);
 
         // 确认按钮
         this.addRenderableWidget(Button.builder(
